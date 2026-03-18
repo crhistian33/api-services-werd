@@ -8,6 +8,7 @@ import { join } from 'path';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { ImagesModule } from './modules/images/images.module';
+import { ProductsModule } from './modules/products/products.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ImagesModule } from './modules/images/images.module';
     ImagesModule,
     CategoriesModule,
     BrandsModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

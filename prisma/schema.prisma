@@ -216,6 +216,7 @@ model Product {
   metaDescription  String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
 
   category     Category              @relation(fields: [categoryId], references: [id])
   brand        Brand?                @relation(fields: [brandId], references: [id])
@@ -233,6 +234,7 @@ model Product {
   @@index([status])
   @@index([isFeatured])
   @@index([slug])
+  @@index([deletedAt])
   @@map("products")
 }
 
