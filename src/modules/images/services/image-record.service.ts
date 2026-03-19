@@ -366,35 +366,6 @@ export class ImageRecordService {
     await db.image.delete({ where: { id: imageId } });
   }
 
-  // ═══════════════════════════════════════════════
-  // cleanOrphanTempFiles — limpia archivos temp huérfanos del disco
-  // (ya no hay registros temp en BD, solo archivos sin procesar)
-  // ═══════════════════════════════════════════════
-  async cleanOrphanTempFiles(olderThanMinutes = 60): Promise<number> {
-    const { readdir, stat } = await import('fs/promises');
-    const tempDir = join(process.cwd(), 'uploads', 'temp');
-    const threshold = Date.now() - olderThanMinutes * 60 * 1000;
-
-    let cleaned = 0;
-    try {
-      const files = await readdir(tempDir);
-      await Promise.all(
-        files.map(async (file) => {
-          const filePath = join(tempDir, file);
-          const fileStat = await stat(filePath);
-          if (fileStat.mtimeMs < threshold) {
-            await this.storage.deleteFile(filePath);
-            cleaned++;
-          }
-        }),
-      );
-    } catch {
-      // tempDir vacío o inexistente
-    }
-
-    return cleaned;
-  }
-
   // ── Helper privado ───────────────────────────────────────────────
   private async deleteRoleImages(
     entityType: ImageEntityType,
@@ -473,5 +444,134 @@ export class ImageRecordService {
       variants: meta?.variants ?? {},
       isSvg: meta?.format === 'svg',
     };
+  }
+
+  // ═══════════════════════════════════════════════
+  // cleanOrphanTempFiles
+  // Archivos en /uploads/temp/ sin registro en BD
+  // Causa: usuario subió imagen pero no guardó el formulario
+  // ═══════════════════════════════════════════════
+  async cleanOrphanTempFiles(olderThanMinutes = 120): Promise<number> {
+    const { readdir, stat } = await import('fs/promises');
+    const tempDir = join(process.cwd(), 'uploads', 'temp');
+    const threshold = Date.now() - olderThanMinutes * 60 * 1000;
+    let cleaned = 0;
+
+    try {
+      const files = await readdir(tempDir);
+      await Promise.all(
+        files.map(async (file) => {
+          const filePath = join(tempDir, file);
+          const fileStat = await stat(filePath);
+          if (fileStat.mtimeMs < threshold) {
+            await this.storage.deleteFile(filePath);
+            cleaned++;
+          }
+        }),
+      );
+    } catch {
+      // tempDir vacío o inexistente — no es error
+    }
+
+    return cleaned;
+  }
+
+  // ═══════════════════════════════════════════════
+  // fixIncompleteImages
+  // BD isConfirmed:true pero sin finalPath
+  // Causa: transacción BD exitosa pero disco falló
+  // ═══════════════════════════════════════════════
+  async fixIncompleteImages(olderThanMinutes = 5): Promise<number> {
+    const threshold = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+    const incomplete = await this.prisma.image.findMany({
+      where: {
+        isConfirmed: true,
+        finalPath: null,
+        tempPath: { not: null },
+        updatedAt: { lt: threshold },
+      },
+    });
+
+    let fixed = 0;
+
+    for (const img of incomplete) {
+      try {
+        const filename = img.url!.split('/').pop()!;
+        const tempPath = join(process.cwd(), 'uploads', 'temp', filename);
+        const meta = img.metadata as { mimeType?: string };
+        const mimeType = meta?.mimeType ?? 'image/jpeg';
+
+        const {
+          finalPath,
+          url: finalUrl,
+          variants,
+        } = await this.storage.moveTempToFinal(
+          tempPath,
+          img.entityType,
+          img.imageRole,
+          mimeType,
+        );
+
+        const existingMeta = (img.metadata as object) ?? {};
+        await this.prisma.image.update({
+          where: { id: img.id },
+          data: {
+            tempPath: null,
+            finalPath,
+            url: finalUrl,
+            metadata: { ...existingMeta, variants },
+          },
+        });
+
+        fixed++;
+      } catch {
+        // Archivo temp ya no existe — registro irrecuperable
+        // Se elimina para no acumular basura en BD
+        await this.prisma.image
+          .delete({
+            where: { id: img.id },
+          })
+          .catch(() => null);
+      }
+    }
+
+    return fixed;
+  }
+
+  // ═══════════════════════════════════════════════
+  // cleanOrphanTempRecords
+  // Registros BD isConfirmed:false más viejos que X minutos
+  // Causa: registro creado en upload pero nunca confirmado
+  // ═══════════════════════════════════════════════
+  async cleanOrphanTempRecords(olderThanMinutes = 1440): Promise<number> {
+    const threshold = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+    const orphans = await this.prisma.image.findMany({
+      where: {
+        isConfirmed: false,
+        createdAt: { lt: threshold },
+      },
+    });
+
+    // Elimina archivos físicos primero
+    await Promise.all(
+      orphans.map((img) => {
+        const path = img.tempPath ?? img.finalPath;
+        return path
+          ? this.storage.deleteFile(path).catch(() => null)
+          : Promise.resolve();
+      }),
+    );
+
+    // Elimina registros en BD
+    const result = await this.prisma.image.deleteMany({
+      where: {
+        isConfirmed: false,
+        createdAt: { lt: threshold },
+      },
+    });
+
+    return result.count;
   }
 }
