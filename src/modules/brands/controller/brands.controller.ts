@@ -19,10 +19,14 @@ import {
   ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { BrandsService } from '../service/brands.service';
-import { CreateBrandDto } from '../dto/create-brand.dto';
-import { UpdateBrandDto } from '../dto/update-brand.dto';
-import { QueryBrandDto } from '../dto/query-brand.dto';
-import { BulkDeleteBrandDto } from '../dto/bulk-delete-brand.dto';
+import {
+  CreateBrandDto,
+  UpdateBrandDto,
+  QueryBrandDto,
+  BulkDeleteBrandDto,
+  BulkSoftDeleteBrandDto,
+  BulkRestoreBrandDto,
+} from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
 
 @ApiTags('Brands')
@@ -88,7 +92,7 @@ export class BrandsController {
   @Patch('bulk/soft-delete')
   @ResponseMessage('Marcas eliminadas (soft) exitosamente')
   @ApiOperation({ summary: 'Soft-delete múltiples marcas' })
-  softDeleteMany(@Body() dto: BulkDeleteBrandDto) {
+  softDeleteMany(@Body() dto: BulkSoftDeleteBrandDto) {
     return this.brandsService.softDeleteManyBrands(dto.ids);
   }
 
@@ -96,7 +100,7 @@ export class BrandsController {
   @Patch('bulk/restore')
   @ResponseMessage('Marcas restauradas exitosamente')
   @ApiOperation({ summary: 'Restaurar múltiples marcas' })
-  restoreMany(@Body() dto: BulkDeleteBrandDto) {
+  restoreMany(@Body() dto: BulkRestoreBrandDto) {
     return this.brandsService.restoreManyBrands(dto.ids);
   }
 

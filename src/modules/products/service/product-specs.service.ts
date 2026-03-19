@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaClient } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SpecItemDto, FeatureItemDto } from '../dto/specs-product.dto';
+
+type PrismaDatabaseClient =
+  | PrismaService
+  | PrismaClient
+  | Omit<
+      PrismaClient,
+      '$on' | '$connect' | '$disconnect' | '$use' | '$extends'
+    >;
 
 @Injectable()
 export class ProductSpecsService {
@@ -12,12 +21,17 @@ export class ProductSpecsService {
   // sola transacción — nunca deja el producto sin specs
   // a mitad de la operación
   // ═══════════════════════════════════════════════
-  async setSpecs(productId: string, specs: SpecItemDto[]): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.productSpec.deleteMany({
+  async setSpecs(
+    productId: string,
+    specs: SpecItemDto[],
+    prisma?: PrismaDatabaseClient,
+  ): Promise<void> {
+    const db = prisma ?? this.prisma;
+    await db.$transaction([
+      db.productSpec.deleteMany({
         where: { productId },
       }),
-      this.prisma.productSpec.createMany({
+      db.productSpec.createMany({
         data: specs.map((s, i) => ({
           productId,
           specKey: s.specKey.trim(),
@@ -35,12 +49,14 @@ export class ProductSpecsService {
   async setFeatures(
     productId: string,
     features: FeatureItemDto[],
+    prisma?: PrismaDatabaseClient,
   ): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.productFeature.deleteMany({
+    const db = prisma ?? this.prisma;
+    await db.$transaction([
+      db.productFeature.deleteMany({
         where: { productId },
       }),
-      this.prisma.productFeature.createMany({
+      db.productFeature.createMany({
         data: features.map((f, i) => ({
           productId,
           feature: f.feature.trim(),

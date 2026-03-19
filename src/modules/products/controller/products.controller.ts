@@ -21,10 +21,14 @@ import {
 import { ProductsService } from '../service/products.service';
 import { ProductPriceService } from '../service/product-price.service';
 import { ProductSpecsService } from '../service/product-specs.service';
-import { CreateProductDto } from '../dto/create-product.dto';
-import { UpdateProductDto } from '../dto/update-product.dto';
-import { QueryProductDto } from '../dto/query-product.dto';
-import { BulkDeleteProductDto } from '../dto/bulk-delete-product.dto';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  QueryProductDto,
+  BulkDeleteProductDto,
+  BulkSoftDeleteProductDto,
+  BulkRestoreProductDto,
+} from '../dto';
 import { SetPriceDto } from '../dto/price-product.dto';
 import { SetSpecsDto, SetFeaturesDto } from '../dto/specs-product.dto';
 import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
@@ -161,14 +165,14 @@ export class ProductsController {
   @Patch('bulk/soft-delete')
   @ResponseMessage('Productos eliminados (soft) exitosamente')
   @ApiOperation({ summary: 'Soft-delete múltiples productos' })
-  softDeleteMany(@Body() dto: BulkDeleteProductDto) {
+  softDeleteMany(@Body() dto: BulkSoftDeleteProductDto) {
     return this.productsService.softDeleteManyProducts(dto.ids);
   }
 
   @Patch('bulk/restore')
   @ResponseMessage('Productos restaurados exitosamente')
   @ApiOperation({ summary: 'Restaurar múltiples productos' })
-  restoreMany(@Body() dto: BulkDeleteProductDto) {
+  restoreMany(@Body() dto: BulkRestoreProductDto) {
     return this.productsService.restoreManyProducts(dto.ids);
   }
 

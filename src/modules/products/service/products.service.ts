@@ -1,5 +1,3 @@
-// src/modules/products/service/products.service.ts
-
 import { Injectable } from '@nestjs/common';
 import { ImageEntityType, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -7,14 +5,15 @@ import { SluggableService } from '../../../common/services/sluggable.service';
 import { ImageRecordService } from '../../images/services/image-record.service';
 import { ProductPriceService } from './product-price.service';
 import { ProductSpecsService } from './product-specs.service';
-import { CreateProductDto } from '../dto/create-product.dto';
-import { UpdateProductDto } from '../dto/update-product.dto';
-import { QueryProductDto } from '../dto/query-product.dto';
+import { CreateProductDto, UpdateProductDto, QueryProductDto } from '../dto';
 
 type ProductEntity = Prisma.ProductGetPayload<{
   include: {
     category: { select: { id: true; name: true; slug: true } };
     brand: { select: { id: true; name: true; slug: true } };
+    price: true;
+    specs: true;
+    features: true;
   };
 }>;
 
@@ -27,6 +26,28 @@ const RELATION_CHECKS = [
   { countKey: 'cartItems', label: 'item(s) de carrito' },
 ];
 
+// Include completo para PDP y detalle — reutilizado en findById y findBySlug
+const DETAIL_INCLUDE = {
+  category: { select: { id: true, name: true, slug: true } },
+  brand: { select: { id: true, name: true, slug: true } },
+  price: true,
+  specs: { orderBy: { sortOrder: 'asc' as const } },
+  features: { orderBy: { sortOrder: 'asc' as const } },
+} as const;
+
+// Include para listado admin — sin specs ni features (datos de detalle)
+const LIST_INCLUDE = {
+  category: { select: { id: true, name: true, slug: true } },
+  brand: { select: { id: true, name: true, slug: true } },
+  price: true,
+} as const;
+
+// Include para listado público — agrega features para el modal
+const PUBLIC_LIST_INCLUDE = {
+  ...LIST_INCLUDE,
+  features: { orderBy: { sortOrder: 'asc' as const } },
+} as const;
+
 @Injectable()
 export class ProductsService extends SluggableService<
   ProductEntity,
@@ -35,128 +56,107 @@ export class ProductsService extends SluggableService<
   Prisma.ProductWhereInput,
   Prisma.ProductOrderByWithRelationInput
 > {
-  protected useSoftDelete = true;
+  protected override useSoftDelete = true;
+
   constructor(
     prisma: PrismaService,
     private readonly imageRecord: ImageRecordService,
-    private readonly priceService: ProductPriceService, // ← nuevo
-    private readonly specsService: ProductSpecsService, // ← nuevo
+    private readonly priceService: ProductPriceService,
+    private readonly specsService: ProductSpecsService,
   ) {
     super(prisma, 'product');
   }
 
   // ═══════════════════════════════════════════════
-  // findAllProducts — incluye precio para el card
+  // findAllProducts — listado para el panel admin
+  // Incluye precio para el card, sin specs/features
   // ═══════════════════════════════════════════════
   async findAllProducts(query: QueryProductDto) {
     const { search, categoryId, brandId, status, isFeatured, page, limit } =
       query;
 
-    const where: Prisma.ProductWhereInput = {
-      ...(categoryId !== undefined && { categoryId }),
-      ...(brandId !== undefined && { brandId }),
-      ...(status !== undefined && { status }),
-      ...(isFeatured !== undefined && { isFeatured }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { sku: { contains: search, mode: 'insensitive' } },
-          { shortDescription: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
-    };
-
     const result = await this.findAll({
-      where,
-      orderBy: [{ createdAt: 'desc' }],
-      include: {
-        category: { select: { id: true, name: true, slug: true } },
-        brand: { select: { id: true, name: true, slug: true } },
-        price: true, // ← precio para el card del listado
+      where: {
+        ...(categoryId !== undefined && { categoryId }),
+        ...(brandId !== undefined && { brandId }),
+        ...(status !== undefined && { status }),
+        ...(isFeatured !== undefined && { isFeatured }),
+        ...(search !== undefined && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { sku: { contains: search, mode: 'insensitive' } },
+            { shortDescription: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
       },
+      orderBy: [{ createdAt: 'desc' }],
+      include: LIST_INCLUDE,
       pagination: { page, limit },
     });
 
-    const data = await this.imageRecord.attachImagesToMany(
-      result.data,
-      ENTITY_TYPE,
-    );
-
-    return { ...result, data };
+    return {
+      ...result,
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+    };
   }
 
+  // ═══════════════════════════════════════════════
+  // findAllProductsPublic — listado para Astro
+  // Solo activos, incluye features para el modal
+  // ═══════════════════════════════════════════════
   async findAllProductsPublic(query: QueryProductDto) {
     const { search, categoryId, brandId, isFeatured, page, limit } = query;
 
-    const where: Prisma.ProductWhereInput = {
-      deletedAt: null, // ← solo productos no eliminados
-      status: 'active', // ← solo productos activos en el sitio público
-      ...(categoryId !== undefined && { categoryId }),
-      ...(brandId !== undefined && { brandId }),
-      ...(isFeatured !== undefined && { isFeatured }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { sku: { contains: search, mode: 'insensitive' } },
-          { shortDescription: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
-    };
-
     const result = await this.findAll({
-      where,
-      orderBy: [{ createdAt: 'desc' }],
-      include: {
-        category: { select: { id: true, name: true, slug: true } },
-        brand: { select: { id: true, name: true, slug: true } },
-        price: true,
-        features: { orderBy: { sortOrder: 'asc' } }, // ← para el modal
+      where: {
+        status: 'active',
+        deletedAt: null,
+        ...(categoryId !== undefined && { categoryId }),
+        ...(brandId !== undefined && { brandId }),
+        ...(isFeatured !== undefined && { isFeatured }),
+        ...(search !== undefined && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { sku: { contains: search, mode: 'insensitive' } },
+            { shortDescription: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
       },
+      orderBy: [{ createdAt: 'desc' }],
+      include: PUBLIC_LIST_INCLUDE,
       pagination: { page, limit },
     });
 
-    const data = await this.imageRecord.attachImagesToMany(
-      result.data,
-      ENTITY_TYPE,
-    );
-
-    return { ...result, data };
+    return {
+      ...result,
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+    };
   }
 
   // ═══════════════════════════════════════════════
-  // findProductById — detalle completo para PDP y modal
+  // findProductById — detalle completo para PDP
   // ═══════════════════════════════════════════════
   async findProductById(id: string) {
-    const product = await this.findOne(id, {
-      category: { select: { id: true, name: true, slug: true } },
-      brand: { select: { id: true, name: true, slug: true } },
-      price: true, // ← precio actual
-      specs: { orderBy: { sortOrder: 'asc' } }, // ← specs ordenadas
-      features: { orderBy: { sortOrder: 'asc' } }, // ← features ordenadas
-    });
-
+    const product = await this.findOne(id, DETAIL_INCLUDE);
     return this.imageRecord.attachImagesToEntity(product, ENTITY_TYPE);
   }
 
   // ═══════════════════════════════════════════════
-  // findProductBySlug — igual que findProductById
-  // pero busca por slug para el sitio público
+  // findProductBySlug — detalle para sitio público
   // ═══════════════════════════════════════════════
   async findProductBySlug(slug: string) {
-    const product = await this.findBySlug(slug, {
-      category: { select: { id: true, name: true, slug: true } },
-      brand: { select: { id: true, name: true, slug: true } },
-      price: true,
-      specs: { orderBy: { sortOrder: 'asc' } },
-      features: { orderBy: { sortOrder: 'asc' } },
-    });
-
+    const product = await this.findBySlug(slug, DETAIL_INCLUDE);
     return this.imageRecord.attachImagesToEntity(product, ENTITY_TYPE);
   }
 
   // ═══════════════════════════════════════════════
   // createProduct
+  // Estrategia:
+  //   - Datos base + precio + specs + features → $transaction (BD pura)
+  //   - Imágenes → fuera de transaction (operaciones de disco)
+  //   - Si BD falla → rollback, imagen sigue en /temp/, usuario reintenta
+  //   - Si imagen falla → producto creado, usuario puede resubir imagen
   // ═══════════════════════════════════════════════
   async createProduct(dto: CreateProductDto) {
     const {
@@ -170,11 +170,38 @@ export class ProductsService extends SluggableService<
       ...productData
     } = dto;
 
-    const product = await this.createWithSlug(productData as CreateProductDto);
+    // ── Fase 1: BD en una sola transacción ──────────────────────────────────
+    const product = await this.prisma.$transaction(async (tx) => {
+      const created = await this.createWithSlug(
+        productData as CreateProductDto,
+        undefined,
+        tx,
+      );
 
-    // Todo lo que no depende entre sí se ejecuta en paralelo
+      await Promise.all([
+        price !== undefined
+          ? this.priceService.setPrice(
+              created.id,
+              { price, compareAtPrice, cost },
+              tx,
+            )
+          : Promise.resolve(),
+
+        specs?.length
+          ? this.specsService.setSpecs(created.id, specs, tx)
+          : Promise.resolve(),
+
+        features?.length
+          ? this.specsService.setFeatures(created.id, features, tx)
+          : Promise.resolve(),
+      ]);
+
+      return created;
+    });
+
+    // ── Fase 2: imágenes fuera de la transacción ─────────────────────────────
     await Promise.all([
-      tempMainImageId != null
+      tempMainImageId !== undefined
         ? this.imageRecord.syncTempImageById(
             tempMainImageId,
             ENTITY_TYPE,
@@ -183,29 +210,13 @@ export class ProductsService extends SluggableService<
           )
         : Promise.resolve(),
 
-      tempGalleryImageIds != null
+      tempGalleryImageIds?.length
         ? this.imageRecord.syncTempImagesById(
             tempGalleryImageIds,
             ENTITY_TYPE,
             product.id,
             IMAGE_ROLE_GALLERY,
           )
-        : Promise.resolve(),
-
-      price != null
-        ? this.priceService.setPrice(product.id, {
-            price,
-            compareAtPrice,
-            cost,
-          })
-        : Promise.resolve(),
-
-      specs?.length
-        ? this.specsService.setSpecs(product.id, specs)
-        : Promise.resolve(),
-
-      features?.length
-        ? this.specsService.setFeatures(product.id, features)
         : Promise.resolve(),
     ]);
 
@@ -229,8 +240,35 @@ export class ProductsService extends SluggableService<
       ...productData
     } = dto;
 
-    await this.updateWithSlug(id, productData as UpdateProductDto);
+    // ── Fase 1: BD en transacción ────────────────────────────────────────────
+    await this.prisma.$transaction(async (tx) => {
+      await this.updateWithSlug(
+        id,
+        productData as UpdateProductDto,
+        undefined,
+        tx,
+      );
 
+      await Promise.all([
+        price !== undefined
+          ? this.priceService.setPrice(
+              id,
+              { price, compareAtPrice, cost, changedById, reason },
+              tx,
+            )
+          : Promise.resolve(),
+
+        specs !== undefined
+          ? this.specsService.setSpecs(id, specs ?? [], tx)
+          : Promise.resolve(),
+
+        features !== undefined
+          ? this.specsService.setFeatures(id, features ?? [], tx)
+          : Promise.resolve(),
+      ]);
+    });
+
+    // ── Fase 2: imágenes fuera de la transacción ─────────────────────────────
     await Promise.all([
       tempMainImageId !== undefined
         ? this.imageRecord.syncTempImageById(
@@ -249,31 +287,13 @@ export class ProductsService extends SluggableService<
             IMAGE_ROLE_GALLERY,
           )
         : Promise.resolve(),
-
-      price !== undefined
-        ? this.priceService.setPrice(id, {
-            price,
-            compareAtPrice,
-            cost,
-            changedById,
-            reason,
-          })
-        : Promise.resolve(),
-
-      specs !== undefined
-        ? this.specsService.setSpecs(id, specs ?? [])
-        : Promise.resolve(),
-
-      features !== undefined
-        ? this.specsService.setFeatures(id, features ?? [])
-        : Promise.resolve(),
     ]);
 
     return this.findProductById(id);
   }
 
   // ═══════════════════════════════════════════════
-  // removeProduct — sin cambios
+  // removeProduct
   // ═══════════════════════════════════════════════
   async removeProduct(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
@@ -281,6 +301,9 @@ export class ProductsService extends SluggableService<
     return this.remove(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // removeManyProducts
+  // ═══════════════════════════════════════════════
   async removeManyProducts(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     await Promise.all(
@@ -289,21 +312,33 @@ export class ProductsService extends SluggableService<
     return this.removeMany(ids);
   }
 
+  // ═══════════════════════════════════════════════
+  // softDeleteProduct
+  // ═══════════════════════════════════════════════
   async softDeleteProduct(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     return this.softDelete(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // softDeleteManyProducts
+  // ═══════════════════════════════════════════════
   async softDeleteManyProducts(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     return this.softDeleteMany(ids);
   }
 
+  // ═══════════════════════════════════════════════
+  // restoreProduct
+  // ═══════════════════════════════════════════════
   async restoreProduct(id: string) {
     await this.assertNotDeleted(id);
     return this.restore(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // restoreManyProducts
+  // ═══════════════════════════════════════════════
   async restoreManyProducts(ids: string[]) {
     return this.restoreMany(ids);
   }

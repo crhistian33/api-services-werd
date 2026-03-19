@@ -19,9 +19,11 @@ import {
   ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { HeroSlidesService } from '../service/hero-slides.service';
-import { CreateHeroSlideDto } from '../dto/create-hero-slide.dto';
-import { UpdateHeroSlideDto } from '../dto/update-hero-slide.dto';
-import { QueryHeroSlideDto } from '../dto/query-hero-slide.dto';
+import {
+  CreateHeroSlideDto,
+  UpdateHeroSlideDto,
+  QueryHeroSlideDto,
+} from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
 
 @ApiTags('HeroSlides')

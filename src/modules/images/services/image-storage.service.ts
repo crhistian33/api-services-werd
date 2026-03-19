@@ -165,6 +165,7 @@ export class ImageStorageService {
     entityType: ImageEntityType,
     imageRole: string,
     mimeType: string,
+    options: { keepTemp?: boolean } = {},
   ): Promise<MovedImage> {
     const entityKey = entityType.toLowerCase(); // 'product', 'category'
     const variantKey = this.resolveVariantKey(entityKey, imageRole); // 'product' | 'hero_slide_desktop'
@@ -176,7 +177,11 @@ export class ImageStorageService {
 
     // ── SVG: mover a /original/ sin pasar por Sharp ──────────────────────────
     if (isSvg && formatConfig.skipVariantsIfSvg) {
-      return this.moveSvgToFinal(tempPath, entityKey);
+      const moved = await this.moveSvgToFinal(tempPath, entityKey);
+      if (!options.keepTemp) {
+        await this.deleteFile(tempPath);
+      }
+      return moved;
     }
 
     // ── Raster: generar variantes con Sharp ──────────────────────────────────
@@ -186,8 +191,9 @@ export class ImageStorageService {
       variantKey,
     );
 
-    // Elimina el temporal después de generar todas las variantes
-    await unlink(tempPath).catch(() => null);
+    if (!options.keepTemp) {
+      await unlink(tempPath).catch(() => null);
+    }
 
     return {
       finalPath: variants.original.fullPath,

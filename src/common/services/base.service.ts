@@ -1,5 +1,6 @@
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaClient } from 'generated/prisma/client';
 import { PrismaModelDelegate } from '../interfaces/prisma-delegate.interface';
 import {
   PaginatedResult,
@@ -8,28 +9,45 @@ import {
 } from '../interfaces/pagination.interface';
 import { RelationCheck } from '../interfaces/relation-check.interface';
 
+export type PrismaTransactionClient = Omit<
+  PrismaClient,
+  '$on' | '$connect' | '$disconnect' | '$use' | '$extends'
+>;
+
+export type PrismaDatabaseClient =
+  | PrismaService
+  | PrismaClient
+  | PrismaTransactionClient;
+
 export abstract class BaseService<
-  T,
+  T extends { id: string },
   CreateDto,
   UpdateDto,
   WhereInput = object,
   OrderByInput = object,
 > {
-  // Para modelos que no tienen deletedAt (p.ej. HeroSlide), dejar false.
   protected useSoftDelete = false;
+
   constructor(
     protected readonly prisma: PrismaService,
     protected readonly modelName: string,
   ) {}
 
-  // ── Acceso dinámico al delegate ──────────────
-  protected get model(): PrismaModelDelegate {
-    return (this.prisma as Record<string, any>)[
+  // ── Acceso dinámico al modelo Prisma ────────────────────────────────────────
+  protected getModel(client?: PrismaDatabaseClient): PrismaModelDelegate {
+    const db = client ?? this.prisma;
+    const model = (db as unknown as Record<string, PrismaModelDelegate>)[
       this.modelName
-    ] as PrismaModelDelegate;
+    ];
+
+    if (!model) {
+      throw new Error(`Modelo Prisma no encontrado: ${this.modelName}`);
+    }
+
+    return model;
   }
 
-  // ── Helpers de paginación ────────────────────
+  // ── Helpers de paginación ───────────────────────────────────────────────────
   protected buildSkip(page: number, limit: number): number {
     return (page - 1) * limit;
   }
@@ -47,26 +65,22 @@ export abstract class BaseService<
     };
   }
 
-  // ── Helper: filtra registros eliminados ──────
-  /**
-   * Returns `{ deletedAt: null }` when the model supports soft-delete and
-   * `includeDeleted` is false. Returns `{}` otherwise.
-   */
+  // ── Soft delete filter ──────────────────────────────────────────────────────
   protected softDeleteFilter(includeDeleted = false): object {
-    if (!this.useSoftDelete || includeDeleted) {
-      return {};
-    }
+    if (!this.useSoftDelete || includeDeleted) return {};
     return { deletedAt: null };
   }
 
   // ═══════════════════════════════════════════════
-  // assertExists — verifica que el registro exista y no esté eliminado.
-  // Lanza NotFoundException si no se encuentra.
+  // assertExists
   // ═══════════════════════════════════════════════
-  async assertExists(id: string, includeDeleted = false): Promise<void> {
-    const filter = this.softDeleteFilter(includeDeleted);
-    const record = await this.model.findFirst({
-      where: { id, ...filter },
+  async assertExists(
+    id: string,
+    includeDeleted = false,
+    client?: PrismaDatabaseClient,
+  ): Promise<void> {
+    const record = await this.getModel(client).findFirst({
+      where: { id, ...this.softDeleteFilter(includeDeleted) },
       select: { id: true },
     });
 
@@ -78,12 +92,7 @@ export abstract class BaseService<
   }
 
   // ═══════════════════════════════════════════════
-  // checkRelations — verifica que el registro no tenga relaciones bloqueantes.
-  // Útil para guards antes de eliminar.
-  //
-  // @param id       — id del registro a verificar
-  // @param checks   — lista de relaciones a comprobar (clave en _count + etiqueta)
-  // @param label    — nombre del registro para el mensaje de error
+  // checkRelations
   // ═══════════════════════════════════════════════
   async checkRelations(
     id: string,
@@ -94,7 +103,7 @@ export abstract class BaseService<
       checks.map((c) => [c.countKey, true]),
     );
 
-    const record = (await this.model.findUnique({
+    const record = (await this.getModel().findUnique({
       where: { id },
       select: { id: true, name: true, _count: { select: countSelect } },
     })) as { id: string; name?: string; _count: Record<string, number> } | null;
@@ -112,16 +121,15 @@ export abstract class BaseService<
       }));
 
     if (conflicts.length > 0) {
-      const entityLabel = label ?? record.name ?? id;
       throw new ConflictException({
-        message: `No se puede eliminar "${entityLabel}".`,
+        message: `No se puede eliminar "${label ?? record.name ?? id}".`,
         details: conflicts,
       });
     }
   }
 
   // ═══════════════════════════════════════════════
-  // checkRelationsMany — igual que checkRelations pero para un lote de ids.
+  // checkRelationsMany
   // ═══════════════════════════════════════════════
   async checkRelationsMany(
     ids: string[],
@@ -131,7 +139,7 @@ export abstract class BaseService<
       checks.map((c) => [c.countKey, true]),
     );
 
-    const records = (await this.model.findMany({
+    const records = (await this.getModel().findMany({
       where: { id: { in: ids } },
       select: { id: true, name: true, _count: { select: countSelect } },
     })) as { id: string; name?: string; _count: Record<string, number> }[];
@@ -167,21 +175,22 @@ export abstract class BaseService<
 
     const page = pagination?.page ?? 1;
     const limit = pagination?.limit ?? 20;
-    const skip = this.buildSkip(page, limit);
 
-    const softFilter = this.softDeleteFilter(includeDeleted);
-    const mergedWhere = { ...softFilter, ...(where as object) };
+    const mergedWhere = {
+      ...this.softDeleteFilter(includeDeleted),
+      ...(where as object),
+    };
 
     const [data, total] = await Promise.all([
-      this.model.findMany({
+      this.getModel().findMany({
         where: mergedWhere,
         orderBy,
-        skip,
+        skip: this.buildSkip(page, limit),
         take: limit,
         include,
         select,
       }) as Promise<T[]>,
-      this.model.count({ where: mergedWhere }),
+      this.getModel().count({ where: mergedWhere }),
     ]);
 
     return {
@@ -197,11 +206,10 @@ export abstract class BaseService<
     id: string,
     include?: object,
     includeDeleted = false,
+    client?: PrismaDatabaseClient,
   ): Promise<T> {
-    const softFilter = this.softDeleteFilter(includeDeleted);
-
-    const record = (await this.model.findFirst({
-      where: { id, ...softFilter },
+    const record = (await this.getModel(client).findFirst({
+      where: { id, ...this.softDeleteFilter(includeDeleted) },
       include,
     })) as T | null;
 
@@ -217,31 +225,47 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   // create
   // ═══════════════════════════════════════════════
-  async create(data: CreateDto, include?: object): Promise<T> {
-    return this.model.create({ data, include }) as Promise<T>;
+  async create(
+    data: CreateDto,
+    include?: object,
+    client?: PrismaDatabaseClient,
+  ): Promise<T> {
+    return this.getModel(client).create({ data, include }) as Promise<T>;
   }
 
   // ═══════════════════════════════════════════════
   // update
   // ═══════════════════════════════════════════════
-  async update(id: string, data: UpdateDto, include?: object): Promise<T> {
-    await this.assertExists(id);
-    return this.model.update({ where: { id }, data, include }) as Promise<T>;
+  async update(
+    id: string,
+    data: UpdateDto,
+    include?: object,
+    client?: PrismaDatabaseClient,
+  ): Promise<T> {
+    await this.assertExists(id, false, client);
+    return this.getModel(client).update({
+      where: { id },
+      data,
+      include,
+    }) as Promise<T>;
   }
 
   // ═══════════════════════════════════════════════
   // remove
   // ═══════════════════════════════════════════════
-  async remove(id: string): Promise<T> {
-    await this.assertExists(id);
-    return this.model.delete({ where: { id } }) as Promise<T>;
+  async remove(id: string, client?: PrismaDatabaseClient): Promise<T> {
+    await this.assertExists(id, false, client);
+    return this.getModel(client).delete({ where: { id } }) as Promise<T>;
   }
 
   // ═══════════════════════════════════════════════
   // removeMany
   // ═══════════════════════════════════════════════
-  async removeMany(ids: string[]): Promise<BatchResult> {
-    return this.model.deleteMany({
+  async removeMany(
+    ids: string[],
+    client?: PrismaDatabaseClient,
+  ): Promise<BatchResult> {
+    return this.getModel(client).deleteMany({
       where: { id: { in: ids } },
     }) as Promise<BatchResult>;
   }
@@ -249,9 +273,9 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   // softDelete
   // ═══════════════════════════════════════════════
-  async softDelete(id: string): Promise<T> {
-    await this.assertExists(id);
-    return this.model.update({
+  async softDelete(id: string, client?: PrismaDatabaseClient): Promise<T> {
+    await this.assertExists(id, false, client);
+    return this.getModel(client).update({
       where: { id },
       data: { deletedAt: new Date() },
     }) as Promise<T>;
@@ -260,8 +284,11 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   // softDeleteMany
   // ═══════════════════════════════════════════════
-  async softDeleteMany(ids: string[]): Promise<BatchResult> {
-    return this.model.updateMany({
+  async softDeleteMany(
+    ids: string[],
+    client?: PrismaDatabaseClient,
+  ): Promise<BatchResult> {
+    return this.getModel(client).updateMany({
       where: { id: { in: ids } },
       data: { deletedAt: new Date() },
     }) as Promise<BatchResult>;
@@ -270,9 +297,9 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   // restore
   // ═══════════════════════════════════════════════
-  async restore(id: string): Promise<T> {
-    await this.assertExists(id, true);
-    return this.model.update({
+  async restore(id: string, client?: PrismaDatabaseClient): Promise<T> {
+    await this.assertExists(id, true, client);
+    return this.getModel(client).update({
       where: { id },
       data: { deletedAt: null },
     }) as Promise<T>;
@@ -281,8 +308,11 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   // restoreMany
   // ═══════════════════════════════════════════════
-  async restoreMany(ids: string[]): Promise<BatchResult> {
-    return this.model.updateMany({
+  async restoreMany(
+    ids: string[],
+    client?: PrismaDatabaseClient,
+  ): Promise<BatchResult> {
+    return this.getModel(client).updateMany({
       where: { id: { in: ids } },
       data: { deletedAt: null },
     }) as Promise<BatchResult>;

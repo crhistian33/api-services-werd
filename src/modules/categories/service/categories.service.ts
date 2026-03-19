@@ -7,13 +7,15 @@ import { CreateCategoryDto } from '../dto/create-category.dto';
 import { UpdateCategoryDto } from '../dto/update-category.dto';
 import { QueryCategoryDto } from '../dto/query-category.dto';
 
-type CategoryWithRelations = Prisma.CategoryGetPayload<{
-  include: { parent: true; children: true };
+type CategoryEntity = Prisma.CategoryGetPayload<{
+  include: {
+    parent: { select: { id: true; name: true; slug: true } };
+    children: true;
+  };
 }>;
 
 const ENTITY_TYPE = ImageEntityType.CATEGORY;
 const IMAGE_ROLE = 'main';
-
 const RELATION_CHECKS = [
   { countKey: 'products', label: 'producto(s) asignado(s)' },
   { countKey: 'children', label: 'subcategoría(s)' },
@@ -22,22 +24,23 @@ const RELATION_CHECKS = [
 const DETAIL_INCLUDE = {
   parent: { select: { id: true, name: true, slug: true } },
   children: {
-    where: { isActive: true },
+    where: { isActive: true, deletedAt: null },
     orderBy: { sortOrder: 'asc' as const },
     select: { id: true, name: true, slug: true, sortOrder: true },
   },
   _count: { select: { products: true } },
-};
+} as const;
 
 @Injectable()
 export class CategoriesService extends SluggableService<
-  CategoryWithRelations,
+  CategoryEntity,
   CreateCategoryDto,
   UpdateCategoryDto,
   Prisma.CategoryWhereInput,
   Prisma.CategoryOrderByWithRelationInput
 > {
-  protected useSoftDelete = true;
+  protected override useSoftDelete = true;
+
   constructor(
     prisma: PrismaService,
     private readonly imageRecord: ImageRecordService,
@@ -45,22 +48,23 @@ export class CategoriesService extends SluggableService<
     super(prisma, 'category');
   }
 
+  // ═══════════════════════════════════════════════
+  // findAllCategories
+  // ═══════════════════════════════════════════════
   async findAllCategories(query: QueryCategoryDto) {
     const { search, isActive, parentId, page, limit } = query;
 
-    const where: Prisma.CategoryWhereInput = {
-      ...(isActive !== undefined && { isActive }),
-      ...(parentId !== undefined && { parentId: parentId ?? null }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
-    };
-
     const result = await this.findAll({
-      where,
+      where: {
+        ...(isActive !== undefined && { isActive }),
+        ...(parentId !== undefined && { parentId: parentId ?? null }),
+        ...(search !== undefined && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         parent: { select: { id: true, name: true, slug: true } },
@@ -69,23 +73,28 @@ export class CategoriesService extends SluggableService<
       pagination: { page, limit },
     });
 
-    const data = await this.imageRecord.attachImagesToMany(
-      result.data,
-      ENTITY_TYPE,
-    );
-    return { ...result, data };
+    return {
+      ...result,
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+    };
   }
 
+  // ═══════════════════════════════════════════════
+  // findCategoryById
+  // ═══════════════════════════════════════════════
   async findCategoryById(id: string) {
     const category = await this.findOne(id, DETAIL_INCLUDE);
     return this.imageRecord.attachImagesToEntity(category, ENTITY_TYPE);
   }
 
+  // ═══════════════════════════════════════════════
+  // findCategoryBySlug
+  // ═══════════════════════════════════════════════
   async findCategoryBySlug(slug: string) {
     const category = await this.findBySlug(slug, {
       parent: { select: { id: true, name: true, slug: true } },
       children: {
-        where: { isActive: true },
+        where: { isActive: true, deletedAt: null },
         orderBy: { sortOrder: 'asc' },
         select: { id: true, name: true, slug: true },
       },
@@ -93,15 +102,21 @@ export class CategoriesService extends SluggableService<
     return this.imageRecord.attachImagesToEntity(category, ENTITY_TYPE);
   }
 
+  // ═══════════════════════════════════════════════
+  // createCategory
+  // ═══════════════════════════════════════════════
   async createCategory(dto: CreateCategoryDto) {
-    if (dto.parentId) await this.assertExists(dto.parentId);
+    if (dto.parentId !== undefined) {
+      await this.assertExists(dto.parentId);
+    }
 
     const { tempImageId, ...categoryData } = dto;
+
     const category = await this.createWithSlug(
       categoryData as CreateCategoryDto,
     );
 
-    if (tempImageId != null) {
+    if (tempImageId !== undefined) {
       await this.imageRecord.syncTempImageById(
         tempImageId,
         ENTITY_TYPE,
@@ -113,8 +128,11 @@ export class CategoriesService extends SluggableService<
     return this.findCategoryById(category.id);
   }
 
+  // ═══════════════════════════════════════════════
+  // updateCategory
+  // ═══════════════════════════════════════════════
   async updateCategory(id: string, dto: UpdateCategoryDto) {
-    if (dto.parentId) {
+    if (dto.parentId !== undefined) {
       if (dto.parentId === id) {
         throw new BadRequestException(
           'Una categoría no puede ser su propio padre',
@@ -124,9 +142,10 @@ export class CategoriesService extends SluggableService<
     }
 
     const { tempImageId, ...categoryData } = dto;
+
     await this.updateWithSlug(id, categoryData as UpdateCategoryDto);
 
-    if (tempImageId != null) {
+    if (tempImageId !== undefined) {
       await this.imageRecord.syncTempImageById(
         tempImageId,
         ENTITY_TYPE,
@@ -138,12 +157,18 @@ export class CategoriesService extends SluggableService<
     return this.findCategoryById(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // removeCategory
+  // ═══════════════════════════════════════════════
   async removeCategory(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     await this.imageRecord.deleteEntityImages(ENTITY_TYPE, id);
     return this.remove(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // removeManyCategories
+  // ═══════════════════════════════════════════════
   async removeManyCategories(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     await Promise.all(
@@ -152,17 +177,20 @@ export class CategoriesService extends SluggableService<
     return this.removeMany(ids);
   }
 
+  // ═══════════════════════════════════════════════
+  // getCategoryTree — árbol completo para navegación
+  // ═══════════════════════════════════════════════
   async getCategoryTree() {
     return this.prisma.category.findMany({
-      where: { parentId: null, isActive: true },
+      where: { parentId: null, isActive: true, deletedAt: null },
       orderBy: { sortOrder: 'asc' },
       include: {
         children: {
-          where: { isActive: true },
+          where: { isActive: true, deletedAt: null },
           orderBy: { sortOrder: 'asc' },
           include: {
             children: {
-              where: { isActive: true },
+              where: { isActive: true, deletedAt: null },
               orderBy: { sortOrder: 'asc' },
             },
           },
@@ -171,21 +199,33 @@ export class CategoriesService extends SluggableService<
     });
   }
 
+  // ═══════════════════════════════════════════════
+  // softDeleteCategory
+  // ═══════════════════════════════════════════════
   async softDeleteCategory(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     return this.softDelete(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // softDeleteManyCategories
+  // ═══════════════════════════════════════════════
   async softDeleteManyCategories(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     return this.softDeleteMany(ids);
   }
 
+  // ═══════════════════════════════════════════════
+  // restoreCategory
+  // ═══════════════════════════════════════════════
   async restoreCategory(id: string) {
     await this.assertNotDeleted(id);
     return this.restore(id);
   }
 
+  // ═══════════════════════════════════════════════
+  // restoreManyCategories
+  // ═══════════════════════════════════════════════
   async restoreManyCategories(ids: string[]) {
     return this.restoreMany(ids);
   }

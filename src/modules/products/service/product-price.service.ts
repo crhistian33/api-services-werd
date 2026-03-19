@@ -4,7 +4,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { Prisma } from 'generated/prisma/client';
+import { Prisma, PrismaClient } from 'generated/prisma/client';
+
+type PrismaDatabaseClient =
+  | PrismaService
+  | PrismaClient
+  | Omit<
+      PrismaClient,
+      '$on' | '$connect' | '$disconnect' | '$use' | '$extends'
+    >;
 
 export interface SetPriceInput {
   price: number;
@@ -39,7 +47,12 @@ export class ProductPriceService {
   // setPrice — crea o actualiza el precio actual
   // y registra el cambio en el historial
   // ═══════════════════════════════════════════════
-  async setPrice(productId: string, input: SetPriceInput) {
+  async setPrice(
+    productId: string,
+    input: SetPriceInput,
+    prisma?: PrismaDatabaseClient,
+  ) {
+    const db = prisma ?? this.prisma;
     const { price, compareAtPrice, cost, changedById, reason } = input;
 
     // Validación de negocio
@@ -56,7 +69,7 @@ export class ProductPriceService {
         : null;
 
     // Upsert atómico — crea si no existe, actualiza si existe
-    const productPrice = await this.prisma.productPrice.upsert({
+    const productPrice = await db.productPrice.upsert({
       where: { productId },
       create: {
         productId,
@@ -74,7 +87,7 @@ export class ProductPriceService {
     });
 
     // Registra en historial — siempre, sin excepción
-    await this.prisma.productPriceHistory.create({
+    await db.productPriceHistory.create({
       data: {
         productId,
         price: new Prisma.Decimal(price),

@@ -19,10 +19,14 @@ import {
   ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { CategoriesService } from '../service/categories.service';
-import { CreateCategoryDto } from '../dto/create-category.dto';
-import { UpdateCategoryDto } from '../dto/update-category.dto';
-import { QueryCategoryDto } from '../dto/query-category.dto';
-import { BulkDeleteDto } from '../dto/bulk-delete-category.dto';
+import {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  QueryCategoryDto,
+  BulkDeleteCategoryDto,
+  BulkSoftDeleteCategoryDto,
+  BulkRestoreCategoryDto,
+} from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
 
 @ApiTags('Categories')
@@ -91,7 +95,7 @@ export class CategoriesController {
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Categorías eliminadas exitosamente')
   @ApiOperation({ summary: 'Eliminar múltiples categorías' })
-  removeMany(@Body() dto: BulkDeleteDto) {
+  removeMany(@Body() dto: BulkDeleteCategoryDto) {
     return this.categoriesService.removeManyCategories(dto.ids);
   }
 
@@ -99,7 +103,7 @@ export class CategoriesController {
   @Patch('bulk/soft-delete')
   @ResponseMessage('Categorías eliminadas (soft) exitosamente')
   @ApiOperation({ summary: 'Soft-delete múltiples categorías' })
-  softDeleteMany(@Body() dto: BulkDeleteDto) {
+  softDeleteMany(@Body() dto: BulkSoftDeleteCategoryDto) {
     return this.categoriesService.softDeleteManyCategories(dto.ids);
   }
 
@@ -107,7 +111,7 @@ export class CategoriesController {
   @Patch('bulk/restore')
   @ResponseMessage('Categorías restauradas exitosamente')
   @ApiOperation({ summary: 'Restaurar múltiples categorías' })
-  restoreMany(@Body() dto: BulkDeleteDto) {
+  restoreMany(@Body() dto: BulkRestoreCategoryDto) {
     return this.categoriesService.restoreManyCategories(dto.ids);
   }
 

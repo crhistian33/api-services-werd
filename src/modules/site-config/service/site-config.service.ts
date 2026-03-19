@@ -1,17 +1,18 @@
-// src/modules/site-config/site-config.service.ts
-
 import {
   Injectable,
   NotFoundException,
   InternalServerErrorException,
   OnModuleInit,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
-import { ImageRecordService } from '../../images/services/image-record.service';
 import { ImageEntityType } from 'generated/prisma/client';
-import { UpdateSiteConfigDto } from '../dto/update-site-config.dto';
-import { CreateSocialLinkDto } from '../dto/create-social-link.dto';
-import { UpdateSocialLinkDto } from '../dto/update-social-link.dto';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaDatabaseClient } from '../../../common/services/base.service';
+import { ImageRecordService } from '../../images/services/image-record.service';
+import {
+  UpdateSiteConfigDto,
+  CreateSocialLinkDto,
+  UpdateSocialLinkDto,
+} from '../dto';
 
 const ENTITY_TYPE = ImageEntityType.SITE_CONFIG;
 const ROLE_LOGO_HEADER = 'logo_header';
@@ -26,9 +27,10 @@ export class SiteConfigService implements OnModuleInit {
 
   // ═══════════════════════════════════════════════
   // onModuleInit — garantiza que siempre existe
-  // un registro de SiteConfig al arrancar el servidor
+  // un registro de SiteConfig al arrancar el servidor.
+  // Si no existe lo crea con valores por defecto.
   // ═══════════════════════════════════════════════
-  async onModuleInit() {
+  async onModuleInit(): Promise<void> {
     const count = await this.prisma.siteConfig.count();
     if (count === 0) {
       await this.prisma.siteConfig.create({
@@ -42,6 +44,7 @@ export class SiteConfigService implements OnModuleInit {
 
   // ═══════════════════════════════════════════════
   // getConfigId — helper privado reutilizable
+  // Obtiene el id del único registro de SiteConfig
   // ═══════════════════════════════════════════════
   private async getConfigId(): Promise<string> {
     const config = await this.prisma.siteConfig.findFirst({
@@ -57,6 +60,7 @@ export class SiteConfigService implements OnModuleInit {
 
   // ═══════════════════════════════════════════════
   // get — configuración completa para el admin
+  // Incluye todas las redes sociales y logos
   // ═══════════════════════════════════════════════
   async get() {
     const config = await this.prisma.siteConfig.findFirst({
@@ -73,13 +77,14 @@ export class SiteConfigService implements OnModuleInit {
   }
 
   // ═══════════════════════════════════════════════
-  // getPublic — campos públicos para Astro
-  // sin datos sensibles (emails internos, taxRate)
+  // getPublic — solo campos públicos para Astro
+  // Sin datos sensibles: emails internos, taxRate
+  // Incluye id para que attachImagesToEntity funcione
   // ═══════════════════════════════════════════════
   async getPublic() {
     const config = await this.prisma.siteConfig.findFirst({
       select: {
-        id: true, // requerido por attachImagesToEntity
+        id: true,
         storeName: true,
         metaTitle: true,
         metaDescription: true,
@@ -109,8 +114,15 @@ export class SiteConfigService implements OnModuleInit {
   }
 
   // ═══════════════════════════════════════════════
-  // update — actualiza configuración base,
-  // redes sociales e imágenes de forma independiente
+  // update — actualiza config base, redes sociales
+  // e imágenes.
+  //
+  // Estrategia:
+  //   - Config base + redes sociales → $transaction (BD pura)
+  //   - Logos → fuera de transaction (operaciones de disco)
+  //   - Si BD falla → rollback, logos siguen en /temp/
+  //   - Si logo falla → config guardada, informa al usuario
+  //     qué logo falló para que reintente solo ese
   // ═══════════════════════════════════════════════
   async update(dto: UpdateSiteConfigDto) {
     const { tempLogoHeaderId, tempLogoFooterId, socialLinks, ...configData } =
@@ -118,27 +130,24 @@ export class SiteConfigService implements OnModuleInit {
 
     const id = await this.getConfigId();
 
-    // 1. Actualiza datos escalares en BD
-    await this.prisma.siteConfig.update({
-      where: { id },
-      data: configData,
+    // ── Fase 1: BD en transacción ────────────────────────────────────────────
+    await this.prisma.$transaction(async (tx) => {
+      await tx.siteConfig.update({
+        where: { id },
+        data: configData,
+      });
+
+      if (socialLinks !== undefined) {
+        await this.syncSocialLinks(id, socialLinks, tx);
+      }
     });
 
-    // 2. Operaciones secundarias independientes
-    //    Cada una con su propio try/catch para
-    //    informar exactamente qué falló sin perder
-    //    los cambios que sí se guardaron
+    // ── Fase 2: logos fuera de la transacción ────────────────────────────────
+    // Cada logo tiene su propio try/catch para informar exactamente
+    // cuál falló sin cancelar el guardado de la configuración
     const errors: string[] = [];
 
-    if (socialLinks !== undefined) {
-      try {
-        await this.syncSocialLinks(id, socialLinks);
-      } catch {
-        errors.push('redes sociales');
-      }
-    }
-
-    if (tempLogoHeaderId != null) {
+    if (tempLogoHeaderId !== undefined) {
       try {
         await this.imageRecord.syncTempImageById(
           tempLogoHeaderId,
@@ -151,7 +160,7 @@ export class SiteConfigService implements OnModuleInit {
       }
     }
 
-    if (tempLogoFooterId != null) {
+    if (tempLogoFooterId !== undefined) {
       try {
         await this.imageRecord.syncTempImageById(
           tempLogoFooterId,
@@ -166,7 +175,7 @@ export class SiteConfigService implements OnModuleInit {
 
     if (errors.length > 0) {
       throw new InternalServerErrorException(
-        `Configuración guardada pero falló: ${errors.join(', ')}. Intenta nuevamente.`,
+        `Configuración guardada. Error al subir: ${errors.join(', ')}. Reintenta.`,
       );
     }
 
@@ -174,69 +183,15 @@ export class SiteConfigService implements OnModuleInit {
   }
 
   // ═══════════════════════════════════════════════
-  // syncSocialLinks — sincroniza el estado completo
-  // de redes sociales en una sola operación:
-  // elimina las que no vienen, upsert de las que sí
-  // ═══════════════════════════════════════════════
-  private async syncSocialLinks(
-    siteConfigId: string,
-    items: CreateSocialLinkDto[],
-  ): Promise<void> {
-    const incomingIds = items.filter((i) => i.id).map((i) => i.id!);
-
-    // Elimina las que ya no están en la lista
-    await this.prisma.socialLink.deleteMany({
-      where: {
-        siteConfigId,
-        ...(incomingIds.length > 0 && {
-          id: { notIn: incomingIds },
-        }),
-      },
-    });
-
-    // Upsert de cada item respetando el orden del array
-    if (items.length > 0) {
-      await this.prisma.$transaction(
-        items.map((item, index) =>
-          item.id
-            ? this.prisma.socialLink.update({
-                where: { id: item.id },
-                data: {
-                  network: item.network,
-                  name: item.name,
-                  icon: item.icon ?? null,
-                  url: item.url,
-                  isActive: item.isActive ?? true,
-                  sortOrder: index,
-                },
-              })
-            : this.prisma.socialLink.create({
-                data: {
-                  siteConfigId,
-                  network: item.network,
-                  name: item.name,
-                  icon: item.icon ?? null,
-                  url: item.url,
-                  isActive: item.isActive ?? true,
-                  sortOrder: index,
-                },
-              }),
-        ),
-      );
-    }
-  }
-
-  // ═══════════════════════════════════════════════
   // createSocialLink — agrega una red social
-  // (para uso directo desde el controller si se
-  // prefiere un endpoint dedicado)
+  // Para el endpoint dedicado POST /social-links
   // ═══════════════════════════════════════════════
   async createSocialLink(dto: CreateSocialLinkDto) {
-    const id = await this.getConfigId();
+    const siteConfigId = await this.getConfigId();
 
     return this.prisma.socialLink.create({
       data: {
-        siteConfigId: id,
+        siteConfigId,
         network: dto.network,
         name: dto.name,
         icon: dto.icon ?? null,
@@ -265,14 +220,12 @@ export class SiteConfigService implements OnModuleInit {
   async removeSocialLink(id: string) {
     await this.assertSocialLinkExists(id);
 
-    return this.prisma.socialLink.delete({
-      where: { id },
-    });
+    return this.prisma.socialLink.delete({ where: { id } });
   }
 
   // ═══════════════════════════════════════════════
-  // reorderSocialLinks — recibe array de IDs en el
-  // nuevo orden y actualiza sortOrder de cada uno
+  // reorderSocialLinks — recibe IDs en nuevo orden
+  // y actualiza sortOrder de cada uno
   // ═══════════════════════════════════════════════
   async reorderSocialLinks(ids: string[]) {
     await this.prisma.$transaction(
@@ -287,9 +240,63 @@ export class SiteConfigService implements OnModuleInit {
     return this.get();
   }
 
-  // ═══════════════════════════════════════════════
-  // assertSocialLinkExists — helper privado
-  // ═══════════════════════════════════════════════
+  // ── Helpers privados ─────────────────────────────────────────────────────
+
+  // Sincroniza el estado completo de redes sociales:
+  // elimina las que no vienen, upsert de las que sí.
+  // Corre dentro de la transacción del método update.
+  private async syncSocialLinks(
+    siteConfigId: string,
+    items: CreateSocialLinkDto[],
+    client?: PrismaDatabaseClient,
+  ): Promise<void> {
+    const db = client ?? this.prisma;
+    const incomingIds = items
+      .filter((i) => i.id !== undefined)
+      .map((i) => i.id as string);
+
+    // Elimina las que ya no están en la lista
+    await db.socialLink.deleteMany({
+      where: {
+        siteConfigId,
+        ...(incomingIds.length > 0 && {
+          id: { notIn: incomingIds },
+        }),
+      },
+    });
+
+    if (items.length === 0) return;
+
+    // Upsert de cada item respetando el orden del array
+    await Promise.all(
+      items.map((item, index) =>
+        item.id !== undefined
+          ? db.socialLink.update({
+              where: { id: item.id },
+              data: {
+                network: item.network,
+                name: item.name,
+                icon: item.icon ?? null,
+                url: item.url,
+                isActive: item.isActive ?? true,
+                sortOrder: index,
+              },
+            })
+          : db.socialLink.create({
+              data: {
+                siteConfigId,
+                network: item.network,
+                name: item.name,
+                icon: item.icon ?? null,
+                url: item.url,
+                isActive: item.isActive ?? true,
+                sortOrder: index,
+              },
+            }),
+      ),
+    );
+  }
+
   private async assertSocialLinkExists(id: string) {
     const link = await this.prisma.socialLink.findUnique({
       where: { id },
