@@ -9,6 +9,8 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { ImagesModule } from './modules/images/images.module';
 import { ProductsModule } from './modules/products/products.module';
+import { SiteConfigModule } from './modules/site-config/site-config.module';
+import { HeroSlidesModule } from './modules/hero-slides/hero-slides.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { ProductsModule } from './modules/products/products.module';
     CategoriesModule,
     BrandsModule,
     ProductsModule,
+    SiteConfigModule,
+    HeroSlidesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

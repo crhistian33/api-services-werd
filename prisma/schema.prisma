@@ -705,6 +705,7 @@ model SiteConfig {
   supportEmail      String?
   phonePrimary      String?
   phoneSecondary    String?
+  whatsappNumber    String?
   address           String?
   currency          String   @default("PEN") @db.Char(3)
   taxRate           Decimal  @default(0.18) @db.Decimal(5, 4)
