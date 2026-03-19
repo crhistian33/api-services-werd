@@ -35,6 +35,7 @@ export class ProductsService extends SluggableService<
   Prisma.ProductWhereInput,
   Prisma.ProductOrderByWithRelationInput
 > {
+  protected useSoftDelete = true;
   constructor(
     prisma: PrismaService,
     private readonly imageRecord: ImageRecordService,

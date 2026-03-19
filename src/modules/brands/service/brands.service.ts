@@ -26,6 +26,7 @@ export class BrandsService extends SluggableService<
   Prisma.BrandWhereInput,
   Prisma.BrandOrderByWithRelationInput
 > {
+  protected useSoftDelete = true;
   constructor(
     prisma: PrismaService,
     private readonly imageRecord: ImageRecordService,
@@ -82,12 +83,12 @@ export class BrandsService extends SluggableService<
       );
     }
 
-    return brand;
+    return this.findBrandById(brand.id);
   }
 
   async updateBrand(id: string, dto: UpdateBrandDto) {
     const { tempImageId, ...brandData } = dto;
-    const brand = await this.updateWithSlug(id, brandData as UpdateBrandDto);
+    await this.updateWithSlug(id, brandData as UpdateBrandDto);
 
     if (tempImageId != null) {
       await this.imageRecord.syncTempImageById(
@@ -98,7 +99,7 @@ export class BrandsService extends SluggableService<
       );
     }
 
-    return brand;
+    return this.findBrandById(id);
   }
 
   async removeBrand(id: string) {

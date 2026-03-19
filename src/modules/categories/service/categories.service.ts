@@ -37,6 +37,7 @@ export class CategoriesService extends SluggableService<
   Prisma.CategoryWhereInput,
   Prisma.CategoryOrderByWithRelationInput
 > {
+  protected useSoftDelete = true;
   constructor(
     prisma: PrismaService,
     private readonly imageRecord: ImageRecordService,
@@ -109,7 +110,7 @@ export class CategoriesService extends SluggableService<
       );
     }
 
-    return category;
+    return this.findCategoryById(category.id);
   }
 
   async updateCategory(id: string, dto: UpdateCategoryDto) {
@@ -123,10 +124,7 @@ export class CategoriesService extends SluggableService<
     }
 
     const { tempImageId, ...categoryData } = dto;
-    const category = await this.updateWithSlug(
-      id,
-      categoryData as UpdateCategoryDto,
-    );
+    await this.updateWithSlug(id, categoryData as UpdateCategoryDto);
 
     if (tempImageId != null) {
       await this.imageRecord.syncTempImageById(
@@ -137,7 +135,7 @@ export class CategoriesService extends SluggableService<
       );
     }
 
-    return category;
+    return this.findCategoryById(id);
   }
 
   async removeCategory(id: string) {

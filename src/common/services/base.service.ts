@@ -15,6 +15,8 @@ export abstract class BaseService<
   WhereInput = object,
   OrderByInput = object,
 > {
+  // Para modelos que no tienen deletedAt (p.ej. HeroSlide), dejar false.
+  protected useSoftDelete = false;
   constructor(
     protected readonly prisma: PrismaService,
     protected readonly modelName: string,
@@ -47,12 +49,14 @@ export abstract class BaseService<
 
   // ── Helper: filtra registros eliminados ──────
   /**
-   * Returns `{ deletedAt: null }` when the model uses soft-delete and
-   * `includeDeleted` is false. Returns `{}` otherwise so callers can always
-   * spread this safely.
+   * Returns `{ deletedAt: null }` when the model supports soft-delete and
+   * `includeDeleted` is false. Returns `{}` otherwise.
    */
   protected softDeleteFilter(includeDeleted = false): object {
-    return includeDeleted ? {} : { deletedAt: null };
+    if (!this.useSoftDelete || includeDeleted) {
+      return {};
+    }
+    return { deletedAt: null };
   }
 
   // ═══════════════════════════════════════════════
