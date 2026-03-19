@@ -26,6 +26,10 @@ export class CreateBrandDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @ApiPropertyOptional({
+    example: 'uuid-temporal-de-imagen',
+    description: 'Id de la imagen del logo temporal subido anteriormente',
+  })
   @IsOptional()
   @IsUUID()
   tempImageId?: string;

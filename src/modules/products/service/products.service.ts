@@ -116,16 +116,14 @@ export class ProductsService extends SluggableService<
       );
     }
 
-    return product;
+    // Devuelve el producto ya con las imágenes confirmadas adjuntas
+    return this.findProductById(product.id);
   }
 
   async updateProduct(id: string, dto: UpdateProductDto) {
     const { tempMainImageId, tempGalleryImageIds, ...productData } = dto;
 
-    const product = await this.updateWithSlug(
-      id,
-      productData as UpdateProductDto,
-    );
+    await this.updateWithSlug(id, productData as UpdateProductDto);
 
     if (tempMainImageId !== undefined) {
       await this.imageRecord.syncTempImageById(
@@ -145,7 +143,8 @@ export class ProductsService extends SluggableService<
       );
     }
 
-    return product;
+    // Devuelve el producto actualizado ya con imágenes adjuntas
+    return this.findProductById(id);
   }
 
   async removeProduct(id: string) {

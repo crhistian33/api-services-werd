@@ -19,13 +19,24 @@ export interface CreateImageRecordInput {
   metadata?: object;
 }
 
+export interface ImageVariants {
+  original?: string;
+  zoom?: string;
+  large?: string;
+  medium?: string;
+  thumb?: string;
+  cart?: string;
+  tiny?: string;
+}
+
 export interface ImageDto {
   id: string;
   imageRole: string;
   url: string | null;
   altText: string | null;
   order: number;
-  metadata: Prisma.JsonValue;
+  variants: ImageVariants; // ← en lugar de metadata raw
+  isSvg: boolean; // ← útil para que el frontend sepa si es SVG
 }
 
 @Injectable()
@@ -35,58 +46,7 @@ export class ImageRecordService {
     private readonly storage: ImageStorageService,
   ) {}
 
-  // ═══════════════════════════════════════════════
-  // syncTempImage — registra, mueve y confirma en un solo paso.
-  // Es el único método que los services de dominio deben llamar.
-  // ═══════════════════════════════════════════════
-  // async syncTempImage(
-  //   entityType: ImageEntityType,
-  //   entityId: string,
-  //   imageRole: string,
-  //   tempUrl: string,
-  // ): Promise<void> {
-  //   const filename = tempUrl.split('/').pop()!;
-  //   const tempPath = join(process.cwd(), 'uploads', 'temp', filename);
-
-  //   // Mueve el archivo a su carpeta final antes de escribir en BD
-  //   const { finalPath, url: finalUrl } = await this.storage.moveTempToFinal(
-  //     tempPath,
-  //     entityType,
-  //     imageRole,
-  //   );
-
-  //   // Elimina registros anteriores del mismo rol (disco + BD)
-  //   await this.deleteRoleImages(entityType, entityId, imageRole);
-
-  //   // Actualizo el registro de imagen temp a confirmado con la info final (path, url, etc)
-  //   await this.prisma.image.update({
-  //     where: {
-  //       entityType_entityId_imageRole: {
-  //         entityType,
-  //         entityId: 'pending',
-  //         imageRole,
-  //       },
-  //     },
-  //     data: {
-  //       tempPath: null,
-  //       entityId,
-  //       finalPath,
-  //       url: finalUrl,
-  //       isConfirmed: true,
-  //     },
-  //   });
-  //   // await this.prisma.image.create({
-  //   //   data: {
-  //   //     entityType,
-  //   //     entityId,
-  //   //     imageRole,
-  //   //     finalPath,
-  //   //     url: finalUrl,
-  //   //     metadata: {} as Prisma.InputJsonValue,
-  //   //     isConfirmed: true,
-  //   //   },
-  //   // });
-  // }
+  // ── syncTempImageById ────────────────────────────────────────────────────────
 
   async syncTempImageById(
     imageId: string,
@@ -94,7 +54,6 @@ export class ImageRecordService {
     entityId: string,
     imageRole: string,
   ): Promise<void> {
-    // 1. Buscar el registro temporal por su ID
     const tempRecord = await this.prisma.image.findUnique({
       where: { id: imageId },
     });
@@ -105,7 +64,6 @@ export class ImageRecordService {
       );
     }
 
-    // 2. Validar que el registro pertenece al entityType y rol esperados
     if (
       tempRecord.entityType !== entityType ||
       tempRecord.imageRole !== imageRole
@@ -115,21 +73,29 @@ export class ImageRecordService {
       );
     }
 
-    // 3. Mover el archivo físico de /temp/ a su carpeta final
     const filename = tempRecord.url!.split('/').pop()!;
     const tempPath = join(process.cwd(), 'uploads', 'temp', filename);
 
-    const { finalPath, url: finalUrl } = await this.storage.moveTempToFinal(
+    // FIX 1: extraer mimeType del metadata guardado en el upload temporal
+    const meta = tempRecord.metadata as { mimeType?: string };
+    const mimeType = meta?.mimeType ?? 'image/jpeg';
+
+    // FIX 1: pasar mimeType como 4to parámetro
+    const {
+      finalPath,
+      url: finalUrl,
+      variants,
+    } = await this.storage.moveTempToFinal(
       tempPath,
       entityType,
       imageRole,
+      mimeType,
     );
 
-    // 4. Eliminar registros confirmados anteriores del mismo rol para esta entidad
-    //    (no afecta a otros 'pending' de otros usuarios)
     await this.deleteRoleImages(entityType, entityId, imageRole);
 
-    // 5. Actualizar SOLO este registro por su ID
+    // FIX 2: guardar variants en metadata
+    const existingMeta = (tempRecord.metadata as object) ?? {};
     await this.prisma.image.update({
       where: { id: imageId },
       data: {
@@ -138,26 +104,24 @@ export class ImageRecordService {
         finalPath,
         url: finalUrl,
         isConfirmed: true,
+        metadata: {
+          ...existingMeta,
+          variants, // { original, large, medium, thumb, cart, ... }
+        },
       },
     });
   }
 
-  /**
-   * Variante para múltiples imágenes del mismo rol (gallery, slides, etc.)
-   * Confirma cada imageId y les asigna un `order` según su posición en el array.
-   *
-   * Usar para: PRODUCT (gallery), HERO_SLIDE (desktop/mobile), etc.
-   */
+  // ── syncTempImagesById ───────────────────────────────────────────────────────
+
   async syncTempImagesById(
     imageIds: string[],
     entityType: ImageEntityType,
     entityId: string,
     imageRole: string,
   ): Promise<void> {
-    // Eliminar imágenes confirmadas anteriores de este rol para la entidad
     await this.deleteRoleImages(entityType, entityId, imageRole);
 
-    // Confirmar cada imagen en el orden recibido
     for (let order = 0; order < imageIds.length; order++) {
       const imageId = imageIds[order];
 
@@ -183,16 +147,24 @@ export class ImageRecordService {
       const filename = tempRecord.url!.split('/').pop()!;
       const tempPath = join(process.cwd(), 'uploads', 'temp', filename);
 
-      const { finalPath, url: finalUrl } = await this.storage.moveTempToFinal(
+      // FIX 1: extraer mimeType del metadata
+      const meta = tempRecord.metadata as { mimeType?: string };
+      const mimeType = meta?.mimeType ?? 'image/jpeg';
+
+      // FIX 1: pasar mimeType como 4to parámetro
+      const {
+        finalPath,
+        url: finalUrl,
+        variants,
+      } = await this.storage.moveTempToFinal(
         tempPath,
         entityType,
         imageRole,
+        mimeType,
       );
 
-      // NOTA: El unique @@unique([entityType, entityId, imageRole]) solo permite
-      // UNA imagen por rol. Para galleries con múltiples imágenes del mismo rol,
-      // debes eliminar ese unique constraint en el schema y usar el campo `order`.
-      // Ver nota al final de este documento.
+      // FIX 2: guardar variants en metadata
+      const existingMeta = (tempRecord.metadata as object) ?? {};
       await this.prisma.image.update({
         where: { id: imageId },
         data: {
@@ -202,6 +174,10 @@ export class ImageRecordService {
           url: finalUrl,
           isConfirmed: true,
           order,
+          metadata: {
+            ...existingMeta,
+            variants,
+          },
         },
       });
     }
@@ -240,7 +216,8 @@ export class ImageRecordService {
         metadata: true,
       },
     });
-    return images;
+
+    return images.map((img) => this.mapImageToDto(img));
   }
 
   // ═══════════════════════════════════════════════
@@ -263,7 +240,6 @@ export class ImageRecordService {
   ): Promise<(T & { images: ImageDto[] })[]> {
     if (entities.length === 0) return [];
 
-    // Una sola query para todas las entidades, no N queries
     const ids = entities.map((e) => e.id);
     const allImages = await this.prisma.image.findMany({
       where: { entityType, entityId: { in: ids }, isConfirmed: true },
@@ -279,18 +255,11 @@ export class ImageRecordService {
       },
     });
 
-    // Agrupa por entityId
+    // Agrupa por entityId usando mapImageToDto
     const imagesByEntity = new Map<string, ImageDto[]>();
     for (const img of allImages) {
       const list = imagesByEntity.get(img.entityId) ?? [];
-      list.push({
-        id: img.id,
-        imageRole: img.imageRole,
-        url: img.url,
-        altText: img.altText,
-        order: img.order,
-        metadata: img.metadata,
-      });
+      list.push(this.mapImageToDto(img));
       imagesByEntity.set(img.entityId, list);
     }
 
@@ -379,14 +348,54 @@ export class ImageRecordService {
     });
 
     await Promise.all(
-      existing.map((img) => {
-        const path = img.finalPath ?? img.tempPath;
-        return path ? this.storage.deleteFile(path) : Promise.resolve();
+      existing.map(async (img) => {
+        // FIX 3: eliminar todas las variantes del disco, no solo finalPath
+        const meta = img.metadata as { variants?: Record<string, string> };
+
+        if (meta?.variants) {
+          // Elimina cada variante física (original, large, medium, thumb, cart...)
+          await Promise.all(
+            Object.values(meta.variants).map((variantUrl) => {
+              // variantUrl es relativa: /uploads/images/product/thumb/uuid.webp
+              // la convertimos a ruta absoluta
+              const absPath = join(process.cwd(), variantUrl);
+              return this.storage.deleteFile(absPath);
+            }),
+          );
+        } else {
+          // Imagen sin variantes (registros viejos o SVG con solo original)
+          const path = img.finalPath ?? img.tempPath;
+          if (path) await this.storage.deleteFile(path);
+        }
       }),
     );
 
     await this.prisma.image.deleteMany({
       where: { entityType, entityId, imageRole },
     });
+  }
+
+  private mapImageToDto(img: {
+    id: string;
+    imageRole: string;
+    url: string | null;
+    altText: string | null;
+    order: number;
+    metadata: Prisma.JsonValue;
+  }): ImageDto {
+    const meta = img.metadata as {
+      variants?: ImageVariants;
+      format?: string;
+    } | null;
+
+    return {
+      id: img.id,
+      imageRole: img.imageRole,
+      url: img.url,
+      altText: img.altText,
+      order: img.order,
+      variants: meta?.variants ?? {},
+      isSvg: meta?.format === 'svg',
+    };
   }
 }

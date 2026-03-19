@@ -1,21 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsOptional,
-  IsString,
-  IsBoolean,
-  IsEnum,
-  IsUUID,
-  IsInt,
-  Min,
-} from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsOptional, IsBoolean, IsEnum, IsUUID } from 'class-validator';
 import { ProductStatus } from 'generated/prisma/client';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 
-export class QueryProductDto {
-  @ApiPropertyOptional({ example: 'gamer' })
-  @IsOptional()
-  @IsString()
-  search?: string;
-
+export class QueryProductDto extends PaginationDto {
   @ApiPropertyOptional({ example: 'uuid-de-categoria' })
   @IsOptional()
   @IsUUID()
@@ -36,18 +25,7 @@ export class QueryProductDto {
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
+  @Type(() => Boolean)
   @IsBoolean()
   isFeatured?: boolean;
-
-  @ApiPropertyOptional({ example: 1 })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  page?: number;
-
-  @ApiPropertyOptional({ example: 20 })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  limit?: number;
 }

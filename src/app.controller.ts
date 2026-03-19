@@ -9,16 +9,4 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
-
-  @Get('products')
-  async getProducts() {
-    try {
-      const products = await this.appService.findAll();
-      return products;
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch products: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
-  }
 }
