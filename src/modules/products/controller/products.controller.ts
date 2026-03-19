@@ -19,16 +19,38 @@ import {
   ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { ProductsService } from '../service/products.service';
+import { ProductPriceService } from '../service/product-price.service';
+import { ProductSpecsService } from '../service/product-specs.service';
 import { CreateProductDto } from '../dto/create-product.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { QueryProductDto } from '../dto/query-product.dto';
 import { BulkDeleteProductDto } from '../dto/bulk-delete-product.dto';
+import { SetPriceDto } from '../dto/price-product.dto';
+import { SetSpecsDto, SetFeaturesDto } from '../dto/specs-product.dto';
 import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
 
 @ApiTags('Products')
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly priceService: ProductPriceService, // ← nuevo
+    private readonly specsService: ProductSpecsService, // ← nuevo
+  ) {}
+
+  // ═══════════════════════════════════════════════
+  // Endpoints existentes — sin cambios
+  // ═══════════════════════════════════════════════
+
+  @Get('public')
+  @ResponseMessage('Productos obtenidos exitosamente')
+  @ApiOperation({ summary: 'Listado público de productos (sitio Astro)' })
+  @ApiOkResponse({
+    description: 'Lista paginada — solo activos, incluye features',
+  })
+  findAllPublic(@Query() query: QueryProductDto) {
+    return this.productsService.findAllProductsPublic(query);
+  }
 
   @Get()
   @ResponseMessage('Productos obtenidos exitosamente')
@@ -72,6 +94,61 @@ export class ProductsController {
   ) {
     return this.productsService.updateProduct(id, dto);
   }
+
+  // ═══════════════════════════════════════════════
+  // Precio — endpoints dedicados
+  // ═══════════════════════════════════════════════
+
+  @Get(':id/price')
+  @ResponseMessage('Precio obtenido exitosamente')
+  @ApiOperation({ summary: 'Obtener precio actual del producto' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  getPrice(@Param('id', ParseUUIDPipe) id: string) {
+    return this.priceService.getPrice(id);
+  }
+
+  @Patch(':id/price')
+  @ResponseMessage('Precio actualizado exitosamente')
+  @ApiOperation({ summary: 'Actualizar precio del producto' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  setPrice(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetPriceDto) {
+    return this.priceService.setPrice(id, dto);
+  }
+
+  @Get(':id/price-history')
+  @ResponseMessage('Historial de precios obtenido exitosamente')
+  @ApiOperation({ summary: 'Historial de cambios de precio' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  getPriceHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.priceService.getPriceHistory(id);
+  }
+
+  // ═══════════════════════════════════════════════
+  // Specs y features — endpoints dedicados
+  // ═══════════════════════════════════════════════
+
+  @Patch(':id/specs')
+  @ResponseMessage('Especificaciones actualizadas exitosamente')
+  @ApiOperation({ summary: 'Reemplazar especificaciones del producto' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  setSpecs(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetSpecsDto) {
+    return this.specsService.setSpecs(id, dto.specs);
+  }
+
+  @Patch(':id/features')
+  @ResponseMessage('Características actualizadas exitosamente')
+  @ApiOperation({ summary: 'Reemplazar características del producto' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  setFeatures(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetFeaturesDto,
+  ) {
+    return this.specsService.setFeatures(id, dto.features);
+  }
+
+  // ═══════════════════════════════════════════════
+  // Bulk — sin cambios
+  // ═══════════════════════════════════════════════
 
   @Delete('bulk')
   @HttpCode(HttpStatus.OK)

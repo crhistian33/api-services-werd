@@ -11,8 +11,11 @@ import {
   Min,
   IsNumber,
   IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { ProductStatus } from 'generated/prisma/client';
+import { SpecItemDto, FeatureItemDto } from './specs-product.dto';
+import { Type } from 'class-transformer';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'Notebook Gamer X' })
@@ -20,13 +23,6 @@ export class CreateProductDto {
   @MinLength(2)
   @MaxLength(255)
   name: string;
-
-  @ApiPropertyOptional({ example: 'notebook-gamer-x' })
-  @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(255)
-  slug?: string;
 
   @ApiProperty({ example: 'NGX-001' })
   @IsString()
@@ -113,4 +109,38 @@ export class CreateProductDto {
   @IsArray()
   @IsUUID('4', { each: true })
   tempGalleryImageIds?: string[];
+
+  @ApiPropertyOptional({ example: 299.99 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @ApiPropertyOptional({ example: 349.99 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  compareAtPrice?: number;
+
+  @ApiPropertyOptional({ example: 150.0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cost?: number;
+
+  // ── Specs ─────────────────────────────────────────────────
+  @ApiPropertyOptional({ type: [SpecItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SpecItemDto)
+  specs?: SpecItemDto[];
+
+  // ── Features ──────────────────────────────────────────────
+  @ApiPropertyOptional({ type: [FeatureItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FeatureItemDto)
+  features?: FeatureItemDto[];
 }
