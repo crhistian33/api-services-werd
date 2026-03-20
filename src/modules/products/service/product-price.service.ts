@@ -4,15 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { Prisma, PrismaClient } from 'generated/prisma/client';
-
-type PrismaDatabaseClient =
-  | PrismaService
-  | PrismaClient
-  | Omit<
-      PrismaClient,
-      '$on' | '$connect' | '$disconnect' | '$use' | '$extends'
-    >;
+import { Prisma } from 'generated/prisma/client';
+import { PrismaDatabaseClient } from '../../../common/services/base.service';
 
 export interface SetPriceInput {
   price: number;

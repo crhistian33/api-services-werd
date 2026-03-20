@@ -6,7 +6,10 @@ import {
 import { ImageEntityType, LinkType, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseService } from '../../../common/services/base.service';
-import { ImageRecordService } from '../../images/services/image-record.service';
+import {
+  ImageRecordService,
+  MovedImageData,
+} from '../../images/services/image-record.service';
 import {
   CreateHeroSlideDto,
   UpdateHeroSlideDto,
@@ -25,7 +28,6 @@ const ENTITY_TYPE = ImageEntityType.HERO_SLIDE;
 const ROLE_DESKTOP = 'desktop';
 const ROLE_MOBILE = 'mobile';
 
-// Relaciones incluidas en todas las queries
 const SLIDE_INCLUDE = {
   linkProduct: { select: { id: true, name: true, slug: true } },
   linkCategory: { select: { id: true, name: true, slug: true } },
@@ -39,7 +41,6 @@ export class HeroSlidesService extends BaseService<
   Prisma.HeroSlideWhereInput,
   Prisma.HeroSlideOrderByWithRelationInput
 > {
-  // HeroSlide usa borrado físico — no necesita soft delete
   protected override useSoftDelete = false;
 
   constructor(
@@ -50,8 +51,9 @@ export class HeroSlidesService extends BaseService<
   }
 
   // ═══════════════════════════════════════════════
-  // findAllHeroSlides — listado para el admin
+  // findAllHeroSlides
   // ═══════════════════════════════════════════════
+
   async findAllHeroSlides(query: QueryHeroSlideDto) {
     const { isActive, page, limit } = query;
 
@@ -69,9 +71,9 @@ export class HeroSlidesService extends BaseService<
   }
 
   // ═══════════════════════════════════════════════
-  // findAllPublic — solo slides activos en período
-  // actual para Astro (sin paginación — son pocos)
+  // findAllPublic
   // ═══════════════════════════════════════════════
+
   async findAllPublic() {
     const now = new Date();
 
@@ -91,6 +93,7 @@ export class HeroSlidesService extends BaseService<
   // ═══════════════════════════════════════════════
   // findHeroSlideById
   // ═══════════════════════════════════════════════
+
   async findHeroSlideById(id: string) {
     const slide = await this.findOne(id, SLIDE_INCLUDE);
     return this.imageRecord.attachImagesToEntity(slide, ENTITY_TYPE);
@@ -98,53 +101,193 @@ export class HeroSlidesService extends BaseService<
 
   // ═══════════════════════════════════════════════
   // createHeroSlide
+  //
+  // Paso 1 — findTempRecord x 2: valida desktop y mobile (solo lectura)
+  //          Si cualquiera falla: error, nada tocado
+  // Paso 2 — moveToFinal x 2: mueve archivos al disco
+  //          Si cualquiera falla: deleteFiles revierte los ya movidos,
+  //          BD intacta
+  // Paso 3 — $transaction: crea slide + confirmInDb x 2, todo atómico
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
+
   async createHeroSlide(dto: CreateHeroSlideDto) {
     const { tempDesktopImageId, tempMobileImageId, ...slideData } = dto;
 
     this.validateLinkData(slideData);
 
-    const slide = await this.prisma.heroSlide.create({
-      data: {
-        ...slideData,
-        startsAt:
-          slideData.startsAt !== undefined
-            ? new Date(slideData.startsAt)
-            : null,
-        endsAt:
-          slideData.endsAt !== undefined ? new Date(slideData.endsAt) : null,
-      },
-    });
+    // Paso 1: valida todas las imágenes antes de tocar la BD
+    const [desktopTempRecord, mobileTempRecord] = await Promise.all([
+      tempDesktopImageId !== undefined
+        ? this.imageRecord.findTempRecord(
+            tempDesktopImageId,
+            ENTITY_TYPE,
+            ROLE_DESKTOP,
+          )
+        : Promise.resolve(null),
+      tempMobileImageId !== undefined
+        ? this.imageRecord.findTempRecord(
+            tempMobileImageId,
+            ENTITY_TYPE,
+            ROLE_MOBILE,
+          )
+        : Promise.resolve(null),
+    ]);
 
-    await this.syncImages(slide.id, tempDesktopImageId, tempMobileImageId);
+    // Paso 2: mueve archivos al disco (sin tocar BD)
+    const movedList: MovedImageData[] = [];
 
-    return this.findHeroSlideById(slide.id);
+    try {
+      if (desktopTempRecord !== null) {
+        const moved = await this.imageRecord.moveToFinal(
+          desktopTempRecord,
+          ENTITY_TYPE,
+          '', // entityId aún no existe
+          ROLE_DESKTOP,
+        );
+        movedList.push(moved);
+      }
+
+      if (mobileTempRecord !== null) {
+        const moved = await this.imageRecord.moveToFinal(
+          mobileTempRecord,
+          ENTITY_TYPE,
+          '', // entityId aún no existe
+          ROLE_MOBILE,
+        );
+        movedList.push(moved);
+      }
+    } catch (error) {
+      await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
+      throw error;
+    }
+
+    // Paso 3: BD atómica — crea slide + confirma imágenes
+    try {
+      const slide = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.heroSlide.create({
+          data: {
+            ...slideData,
+            startsAt:
+              slideData.startsAt !== undefined
+                ? new Date(slideData.startsAt)
+                : null,
+            endsAt:
+              slideData.endsAt !== undefined
+                ? new Date(slideData.endsAt)
+                : null,
+          },
+        });
+
+        await Promise.all(
+          movedList.map((moved) =>
+            this.imageRecord.confirmInDb(
+              { ...moved, entityId: created.id },
+              tx,
+            ),
+          ),
+        );
+
+        return created;
+      });
+
+      return this.findHeroSlideById(slide.id);
+    } catch (error) {
+      await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
+      throw error;
+    }
   }
 
   // ═══════════════════════════════════════════════
   // updateHeroSlide
+  //
+  // Paso 1 — findTempRecord x 2: valida las imágenes (solo lectura)
+  //          Si cualquiera falla: error, BD intacta, front mantiene el form
+  // Paso 2 — moveToFinal x 2: mueve archivos al disco
+  //          Si cualquiera falla: deleteFiles revierte los ya movidos,
+  //          BD intacta
+  // Paso 3 — $transaction: update slide + confirmInDb x 2, todo atómico
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
+
   async updateHeroSlide(id: string, dto: UpdateHeroSlideDto) {
     const { tempDesktopImageId, tempMobileImageId, ...slideData } = dto;
 
     this.validateLinkData(slideData);
-
     await this.assertExists(id);
 
-    await this.prisma.heroSlide.update({
-      where: { id },
-      data: {
-        ...slideData,
-        ...(slideData.startsAt !== undefined && {
-          startsAt: slideData.startsAt ? new Date(slideData.startsAt) : null,
-        }),
-        ...(slideData.endsAt !== undefined && {
-          endsAt: slideData.endsAt ? new Date(slideData.endsAt) : null,
-        }),
-      },
-    });
+    // Paso 1: valida todas las imágenes antes de tocar la BD
+    const [desktopTempRecord, mobileTempRecord] = await Promise.all([
+      tempDesktopImageId !== undefined
+        ? this.imageRecord.findTempRecord(
+            tempDesktopImageId,
+            ENTITY_TYPE,
+            ROLE_DESKTOP,
+          )
+        : Promise.resolve(null),
+      tempMobileImageId !== undefined
+        ? this.imageRecord.findTempRecord(
+            tempMobileImageId,
+            ENTITY_TYPE,
+            ROLE_MOBILE,
+          )
+        : Promise.resolve(null),
+    ]);
 
-    await this.syncImages(id, tempDesktopImageId, tempMobileImageId);
+    // Paso 2: mueve archivos al disco (sin tocar BD)
+    const movedList: MovedImageData[] = [];
+
+    try {
+      if (desktopTempRecord !== null) {
+        const moved = await this.imageRecord.moveToFinal(
+          desktopTempRecord,
+          ENTITY_TYPE,
+          id,
+          ROLE_DESKTOP,
+        );
+        movedList.push(moved);
+      }
+
+      if (mobileTempRecord !== null) {
+        const moved = await this.imageRecord.moveToFinal(
+          mobileTempRecord,
+          ENTITY_TYPE,
+          id,
+          ROLE_MOBILE,
+        );
+        movedList.push(moved);
+      }
+    } catch (error) {
+      await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
+      throw error;
+    }
+
+    // Paso 3: BD atómica — update slide + confirma imágenes
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.heroSlide.update({
+          where: { id },
+          data: {
+            ...slideData,
+            ...(slideData.startsAt !== undefined && {
+              startsAt: slideData.startsAt
+                ? new Date(slideData.startsAt)
+                : null,
+            }),
+            ...(slideData.endsAt !== undefined && {
+              endsAt: slideData.endsAt ? new Date(slideData.endsAt) : null,
+            }),
+          },
+        });
+
+        await Promise.all(
+          movedList.map((moved) => this.imageRecord.confirmInDb(moved, tx)),
+        );
+      });
+    } catch (error) {
+      await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
+      throw error;
+    }
 
     return this.findHeroSlideById(id);
   }
@@ -152,6 +295,7 @@ export class HeroSlidesService extends BaseService<
   // ═══════════════════════════════════════════════
   // removeHeroSlide
   // ═══════════════════════════════════════════════
+
   async removeHeroSlide(id: string) {
     await this.assertExists(id);
     await this.imageRecord.deleteEntityImages(ENTITY_TYPE, id);
@@ -161,19 +305,18 @@ export class HeroSlidesService extends BaseService<
   // ═══════════════════════════════════════════════
   // removeManyHeroSlides
   // ═══════════════════════════════════════════════
+
   async removeManyHeroSlides(ids: string[]) {
     await Promise.all(
       ids.map((id) => this.imageRecord.deleteEntityImages(ENTITY_TYPE, id)),
     );
-    return this.prisma.heroSlide.deleteMany({
-      where: { id: { in: ids } },
-    });
+    return this.prisma.heroSlide.deleteMany({ where: { id: { in: ids } } });
   }
 
   // ═══════════════════════════════════════════════
-  // reorder — recibe IDs en el nuevo orden
-  // y actualiza sortOrder de cada uno
+  // reorder
   // ═══════════════════════════════════════════════
+
   async reorder(dto: ReorderHeroSlidesDto) {
     await this.prisma.$transaction(
       dto.ids.map((id, index) =>
@@ -188,9 +331,9 @@ export class HeroSlidesService extends BaseService<
   }
 
   // ═══════════════════════════════════════════════
-  // toggleActive — activa o desactiva un slide
-  // sin necesidad de abrir el formulario completo
+  // toggleActive
   // ═══════════════════════════════════════════════
+
   async toggleActive(id: string) {
     const slide = await this.prisma.heroSlide.findUnique({
       where: { id },
@@ -207,36 +350,8 @@ export class HeroSlidesService extends BaseService<
     });
   }
 
-  // ── Helpers privados ─────────────────────────────────────────────────────
+  // ── Helpers privados ──────────────────────────────────────────────
 
-  // Sincroniza imágenes desktop y mobile en paralelo
-  private async syncImages(
-    slideId: string,
-    tempDesktopImageId?: string,
-    tempMobileImageId?: string,
-  ): Promise<void> {
-    await Promise.all([
-      tempDesktopImageId !== undefined
-        ? this.imageRecord.syncTempImageById(
-            tempDesktopImageId,
-            ENTITY_TYPE,
-            slideId,
-            ROLE_DESKTOP,
-          )
-        : Promise.resolve(),
-
-      tempMobileImageId !== undefined
-        ? this.imageRecord.syncTempImageById(
-            tempMobileImageId,
-            ENTITY_TYPE,
-            slideId,
-            ROLE_MOBILE,
-          )
-        : Promise.resolve(),
-    ]);
-  }
-
-  // Valida que el linkType sea consistente con los campos enviados
   private validateLinkData(
     data: Partial<
       Omit<CreateHeroSlideDto, 'tempDesktopImageId' | 'tempMobileImageId'>

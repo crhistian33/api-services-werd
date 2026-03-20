@@ -27,19 +27,36 @@ export class ProductSpecsService {
     prisma?: PrismaDatabaseClient,
   ): Promise<void> {
     const db = prisma ?? this.prisma;
-    await db.$transaction([
-      db.productSpec.deleteMany({
-        where: { productId },
-      }),
-      db.productSpec.createMany({
-        data: specs.map((s, i) => ({
-          productId,
-          specKey: s.specKey.trim(),
-          specValue: s.specValue.trim(),
-          sortOrder: s.sortOrder ?? i,
-        })),
-      }),
-    ]);
+
+    if (prisma !== undefined) {
+      await db.productSpec.deleteMany({ where: { productId } });
+      if (specs.length > 0) {
+        await db.productSpec.createMany({
+          data: specs.map((s: SpecItemDto, i: number) => ({
+            productId,
+            specKey: s.specKey.trim(),
+            specValue: s.specValue.trim(),
+            sortOrder: s.sortOrder ?? i,
+          })),
+        });
+      }
+      return;
+    }
+
+    // Sin client externo → crea su propia transacción
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productSpec.deleteMany({ where: { productId } });
+      if (specs.length > 0) {
+        await tx.productSpec.createMany({
+          data: specs.map((s: SpecItemDto, i: number) => ({
+            productId,
+            specKey: s.specKey.trim(),
+            specValue: s.specValue.trim(),
+            sortOrder: s.sortOrder ?? i,
+          })),
+        });
+      }
+    });
   }
 
   // ═══════════════════════════════════════════════
@@ -52,18 +69,33 @@ export class ProductSpecsService {
     prisma?: PrismaDatabaseClient,
   ): Promise<void> {
     const db = prisma ?? this.prisma;
-    await db.$transaction([
-      db.productFeature.deleteMany({
-        where: { productId },
-      }),
-      db.productFeature.createMany({
-        data: features.map((f, i) => ({
-          productId,
-          feature: f.feature.trim(),
-          sortOrder: f.sortOrder ?? i,
-        })),
-      }),
-    ]);
+
+    if (prisma !== undefined) {
+      await db.productFeature.deleteMany({ where: { productId } });
+      if (features.length > 0) {
+        await db.productFeature.createMany({
+          data: features.map((f: FeatureItemDto, i: number) => ({
+            productId,
+            feature: f.feature.trim(),
+            sortOrder: f.sortOrder ?? i,
+          })),
+        });
+      }
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productFeature.deleteMany({ where: { productId } });
+      if (features.length > 0) {
+        await tx.productFeature.createMany({
+          data: features.map((f: FeatureItemDto, i: number) => ({
+            productId,
+            feature: f.feature.trim(),
+            sortOrder: f.sortOrder ?? i,
+          })),
+        });
+      }
+    });
   }
 
   // ═══════════════════════════════════════════════

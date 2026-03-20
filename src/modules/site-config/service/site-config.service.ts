@@ -1,13 +1,11 @@
-import {
-  Injectable,
-  NotFoundException,
-  InternalServerErrorException,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ImageEntityType } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { PrismaDatabaseClient } from '../../../common/services/base.service';
-import { ImageRecordService } from '../../images/services/image-record.service';
+import {
+  ImageRecordService,
+  MovedImageData,
+} from '../../images/services/image-record.service';
 import {
   UpdateSiteConfigDto,
   CreateSocialLinkDto,
@@ -26,10 +24,9 @@ export class SiteConfigService implements OnModuleInit {
   ) {}
 
   // ═══════════════════════════════════════════════
-  // onModuleInit — garantiza que siempre existe
-  // un registro de SiteConfig al arrancar el servidor.
-  // Si no existe lo crea con valores por defecto.
+  // onModuleInit
   // ═══════════════════════════════════════════════
+
   async onModuleInit(): Promise<void> {
     const count = await this.prisma.siteConfig.count();
     if (count === 0) {
@@ -43,44 +40,39 @@ export class SiteConfigService implements OnModuleInit {
   }
 
   // ═══════════════════════════════════════════════
-  // getConfigId — helper privado reutilizable
-  // Obtiene el id del único registro de SiteConfig
+  // getConfigId
   // ═══════════════════════════════════════════════
+
   private async getConfigId(): Promise<string> {
     const config = await this.prisma.siteConfig.findFirst({
       select: { id: true },
     });
-
     if (!config) {
       throw new NotFoundException('Configuración del sitio no encontrada');
     }
-
     return config.id;
   }
 
   // ═══════════════════════════════════════════════
-  // get — configuración completa para el admin
-  // Incluye todas las redes sociales y logos
+  // get
   // ═══════════════════════════════════════════════
+
   async get() {
     const config = await this.prisma.siteConfig.findFirst({
       include: {
         socialLinks: { orderBy: { sortOrder: 'asc' } },
       },
     });
-
     if (!config) {
       throw new NotFoundException('Configuración del sitio no encontrada');
     }
-
     return this.imageRecord.attachImagesToEntity(config, ENTITY_TYPE);
   }
 
   // ═══════════════════════════════════════════════
-  // getPublic — solo campos públicos para Astro
-  // Sin datos sensibles: emails internos, taxRate
-  // Incluye id para que attachImagesToEntity funcione
+  // getPublic
   // ═══════════════════════════════════════════════
+
   async getPublic() {
     const config = await this.prisma.siteConfig.findFirst({
       select: {
@@ -105,90 +97,103 @@ export class SiteConfigService implements OnModuleInit {
         },
       },
     });
-
     if (!config) {
       throw new NotFoundException('Configuración del sitio no encontrada');
     }
-
     return this.imageRecord.attachImagesToEntity(config, ENTITY_TYPE);
   }
 
   // ═══════════════════════════════════════════════
-  // update — actualiza config base, redes sociales
-  // e imágenes.
+  // update
   //
-  // Estrategia:
-  //   - Config base + redes sociales → $transaction (BD pura)
-  //   - Logos → fuera de transaction (operaciones de disco)
-  //   - Si BD falla → rollback, logos siguen en /temp/
-  //   - Si logo falla → config guardada, informa al usuario
-  //     qué logo falló para que reintente solo ese
+  // Paso 1 — findTempRecord x 2: valida logos (solo lectura)
+  //          Si cualquiera falla: error, BD intacta, front mantiene el form
+  // Paso 2 — moveToFinal x 2: mueve archivos al disco
+  //          Si cualquiera falla: deleteFiles revierte los ya movidos,
+  //          BD intacta
+  // Paso 3 — $transaction: update config + social links + confirmInDb x 2
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
+
   async update(dto: UpdateSiteConfigDto) {
     const { tempLogoHeaderId, tempLogoFooterId, socialLinks, ...configData } =
       dto;
 
     const id = await this.getConfigId();
 
-    // ── Fase 1: BD en transacción ────────────────────────────────────────────
-    await this.prisma.$transaction(async (tx) => {
-      await tx.siteConfig.update({
-        where: { id },
-        data: configData,
-      });
+    // Paso 1: valida todos los logos antes de tocar la BD
+    const [headerTempRecord, footerTempRecord] = await Promise.all([
+      tempLogoHeaderId !== undefined
+        ? this.imageRecord.findTempRecord(
+            tempLogoHeaderId,
+            ENTITY_TYPE,
+            ROLE_LOGO_HEADER,
+          )
+        : Promise.resolve(null),
+      tempLogoFooterId !== undefined
+        ? this.imageRecord.findTempRecord(
+            tempLogoFooterId,
+            ENTITY_TYPE,
+            ROLE_LOGO_FOOTER,
+          )
+        : Promise.resolve(null),
+    ]);
 
-      if (socialLinks !== undefined) {
-        await this.syncSocialLinks(id, socialLinks, tx);
-      }
-    });
+    // Paso 2: mueve archivos al disco (sin tocar BD)
+    const movedList: MovedImageData[] = [];
 
-    // ── Fase 2: logos fuera de la transacción ────────────────────────────────
-    // Cada logo tiene su propio try/catch para informar exactamente
-    // cuál falló sin cancelar el guardado de la configuración
-    const errors: string[] = [];
-
-    if (tempLogoHeaderId !== undefined) {
-      try {
-        await this.imageRecord.syncTempImageById(
-          tempLogoHeaderId,
+    try {
+      if (headerTempRecord !== null) {
+        const moved = await this.imageRecord.moveToFinal(
+          headerTempRecord,
           ENTITY_TYPE,
           id,
           ROLE_LOGO_HEADER,
         );
-      } catch {
-        errors.push('logo header');
+        movedList.push(moved);
       }
-    }
 
-    if (tempLogoFooterId !== undefined) {
-      try {
-        await this.imageRecord.syncTempImageById(
-          tempLogoFooterId,
+      if (footerTempRecord !== null) {
+        const moved = await this.imageRecord.moveToFinal(
+          footerTempRecord,
           ENTITY_TYPE,
           id,
           ROLE_LOGO_FOOTER,
         );
-      } catch {
-        errors.push('logo footer');
+        movedList.push(moved);
       }
+    } catch (error) {
+      await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
+      throw error;
     }
 
-    if (errors.length > 0) {
-      throw new InternalServerErrorException(
-        `Configuración guardada. Error al subir: ${errors.join(', ')}. Reintenta.`,
-      );
+    // Paso 3: BD atómica — update config + social links + confirma logos
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.siteConfig.update({ where: { id }, data: configData });
+
+        if (socialLinks !== undefined) {
+          await this.syncSocialLinks(id, socialLinks, tx);
+        }
+
+        await Promise.all(
+          movedList.map((moved) => this.imageRecord.confirmInDb(moved, tx)),
+        );
+      });
+    } catch (error) {
+      await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
+      throw error;
     }
 
     return this.get();
   }
 
   // ═══════════════════════════════════════════════
-  // createSocialLink — agrega una red social
-  // Para el endpoint dedicado POST /social-links
+  // createSocialLink
   // ═══════════════════════════════════════════════
+
   async createSocialLink(dto: CreateSocialLinkDto) {
     const siteConfigId = await this.getConfigId();
-
     return this.prisma.socialLink.create({
       data: {
         siteConfigId,
@@ -205,28 +210,25 @@ export class SiteConfigService implements OnModuleInit {
   // ═══════════════════════════════════════════════
   // updateSocialLink
   // ═══════════════════════════════════════════════
+
   async updateSocialLink(id: string, dto: UpdateSocialLinkDto) {
     await this.assertSocialLinkExists(id);
-
-    return this.prisma.socialLink.update({
-      where: { id },
-      data: dto,
-    });
+    return this.prisma.socialLink.update({ where: { id }, data: dto });
   }
 
   // ═══════════════════════════════════════════════
   // removeSocialLink
   // ═══════════════════════════════════════════════
+
   async removeSocialLink(id: string) {
     await this.assertSocialLinkExists(id);
-
     return this.prisma.socialLink.delete({ where: { id } });
   }
 
   // ═══════════════════════════════════════════════
-  // reorderSocialLinks — recibe IDs en nuevo orden
-  // y actualiza sortOrder de cada uno
+  // reorderSocialLinks
   // ═══════════════════════════════════════════════
+
   async reorderSocialLinks(ids: string[]) {
     await this.prisma.$transaction(
       ids.map((id, index) =>
@@ -236,38 +238,31 @@ export class SiteConfigService implements OnModuleInit {
         }),
       ),
     );
-
     return this.get();
   }
 
-  // ── Helpers privados ─────────────────────────────────────────────────────
+  // ── Helpers privados ──────────────────────────────────────────────
 
-  // Sincroniza el estado completo de redes sociales:
-  // elimina las que no vienen, upsert de las que sí.
-  // Corre dentro de la transacción del método update.
   private async syncSocialLinks(
     siteConfigId: string,
     items: CreateSocialLinkDto[],
     client?: PrismaDatabaseClient,
   ): Promise<void> {
     const db = client ?? this.prisma;
+
     const incomingIds = items
       .filter((i) => i.id !== undefined)
       .map((i) => i.id as string);
 
-    // Elimina las que ya no están en la lista
     await db.socialLink.deleteMany({
       where: {
         siteConfigId,
-        ...(incomingIds.length > 0 && {
-          id: { notIn: incomingIds },
-        }),
+        ...(incomingIds.length > 0 && { id: { notIn: incomingIds } }),
       },
     });
 
     if (items.length === 0) return;
 
-    // Upsert de cada item respetando el orden del array
     await Promise.all(
       items.map((item, index) =>
         item.id !== undefined
@@ -298,14 +293,10 @@ export class SiteConfigService implements OnModuleInit {
   }
 
   private async assertSocialLinkExists(id: string) {
-    const link = await this.prisma.socialLink.findUnique({
-      where: { id },
-    });
-
+    const link = await this.prisma.socialLink.findUnique({ where: { id } });
     if (!link) {
       throw new NotFoundException(`Red social con id "${id}" no encontrada`);
     }
-
     return link;
   }
 }

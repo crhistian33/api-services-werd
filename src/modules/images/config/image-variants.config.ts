@@ -30,7 +30,7 @@ export const VARIANT_CONFIGS: Record<
   // Imagen más crítica del e-commerce
   product: {
     original: null, // fuente, nunca se sirve al público
-    zoom: 2000, // lupa en PDP / pinch mobile
+    //zoom: 2000, // lupa en PDP / pinch mobile
     large: 1000, // imagen principal PDP
     medium: 480, // cards homepage, PLP listado
     thumb: 120, // miniaturas galería en PDP
@@ -41,9 +41,9 @@ export const VARIANT_CONFIGS: Record<
   // Banner de página + cards en homepage "Compra por categoría"
   category: {
     original: null,
-    large: 1200, // banner hero de la página de categoría
+    //large: 1200, // banner hero de la página de categoría
     medium: 600, // cards "Compra por categoría" en homepage
-    thumb: 300, // menú de navegación con imagen, widget lateral
+    //thumb: 300, // menú de navegación con imagen, widget lateral
   },
 
   // ── BRAND ─────────────────────────────────────────────────

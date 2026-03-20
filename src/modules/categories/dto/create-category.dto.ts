@@ -39,6 +39,7 @@ export class CreateCategoryDto {
   @Min(0)
   sortOrder?: number;
 
+  @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
   tempImageId?: string;

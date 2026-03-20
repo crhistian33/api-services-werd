@@ -2,10 +2,11 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ImageEntityType, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SluggableService } from '../../../common/services/sluggable.service';
-import { ImageRecordService } from '../../images/services/image-record.service';
-import { CreateCategoryDto } from '../dto/create-category.dto';
-import { UpdateCategoryDto } from '../dto/update-category.dto';
-import { QueryCategoryDto } from '../dto/query-category.dto';
+import {
+  ImageRecordService,
+  MovedImageData,
+} from '../../images/services/image-record.service';
+import { CreateCategoryDto, UpdateCategoryDto, QueryCategoryDto } from '../dto';
 
 type CategoryEntity = Prisma.CategoryGetPayload<{
   include: {
@@ -51,6 +52,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // findAllCategories
   // ═══════════════════════════════════════════════
+
   async findAllCategories(query: QueryCategoryDto) {
     const { search, isActive, parentId, page, limit } = query;
 
@@ -82,6 +84,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // findCategoryById
   // ═══════════════════════════════════════════════
+
   async findCategoryById(id: string) {
     const category = await this.findOne(id, DETAIL_INCLUDE);
     return this.imageRecord.attachImagesToEntity(category, ENTITY_TYPE);
@@ -90,6 +93,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // findCategoryBySlug
   // ═══════════════════════════════════════════════
+
   async findCategoryBySlug(slug: string) {
     const category = await this.findBySlug(slug, {
       parent: { select: { id: true, name: true, slug: true } },
@@ -104,35 +108,89 @@ export class CategoriesService extends SluggableService<
 
   // ═══════════════════════════════════════════════
   // createCategory
+  //
+  // Paso 1 — findTempRecord: valida la imagen (solo lectura)
+  //          Si falla: lanza error, nada fue tocado
+  // Paso 2 — moveToFinal: mueve archivo al disco
+  //          Si falla: archivo sigue en /temp/, nada en BD tocado
+  // Paso 3 — $transaction: crea la categoría + confirmInDb juntos
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
+
   async createCategory(dto: CreateCategoryDto) {
-    if (dto.parentId !== undefined) {
+    if (dto.parentId !== undefined && dto.parentId !== null) {
       await this.assertExists(dto.parentId);
     }
 
     const { tempImageId, ...categoryData } = dto;
 
-    const category = await this.createWithSlug(
-      categoryData as CreateCategoryDto,
-    );
+    // Paso 1: valida imagen antes de tocar la BD
+    const tempRecord =
+      tempImageId !== undefined
+        ? await this.imageRecord.findTempRecord(
+            tempImageId,
+            ENTITY_TYPE,
+            IMAGE_ROLE,
+          )
+        : null;
 
-    if (tempImageId !== undefined) {
-      await this.imageRecord.syncTempImageById(
-        tempImageId,
+    // Paso 2: mueve al disco (sin tocar BD)
+    let moved: MovedImageData | null = null;
+    if (tempRecord !== null) {
+      moved = await this.imageRecord.moveToFinal(
+        tempRecord,
         ENTITY_TYPE,
-        category.id,
+        '', // entityId aún no existe, se rellena en confirmInDb
         IMAGE_ROLE,
       );
     }
 
-    return this.findCategoryById(category.id);
+    // Paso 3: BD atómica — crea categoría + confirma imagen juntos
+    try {
+      const category = await this.prisma.$transaction(async (tx) => {
+        const slug = await this.generateUniqueSlug(
+          categoryData.name,
+          undefined,
+          tx,
+        );
+        const created = await this.create(
+          { ...categoryData, slug } as CreateCategoryDto,
+          undefined,
+          tx,
+        );
+
+        if (moved !== null) {
+          await this.imageRecord.confirmInDb(
+            { ...moved, entityId: created.id },
+            tx,
+          );
+        }
+
+        return created;
+      });
+
+      return this.findCategoryById(category.id);
+    } catch (error) {
+      if (moved !== null) {
+        await this.imageRecord.deleteFiles([moved.finalPath]);
+      }
+      throw error;
+    }
   }
 
   // ═══════════════════════════════════════════════
   // updateCategory
+  //
+  // Paso 1 — findTempRecord: valida la imagen (solo lectura)
+  //          Si falla: lanza error, BD intacta, front mantiene el form
+  // Paso 2 — moveToFinal: mueve archivo al disco
+  //          Si falla: archivo sigue en /temp/, BD intacta
+  // Paso 3 — $transaction: update categoría + confirmInDb juntos
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
+
   async updateCategory(id: string, dto: UpdateCategoryDto) {
-    if (dto.parentId !== undefined) {
+    if (dto.parentId !== undefined && dto.parentId !== null) {
       if (dto.parentId === id) {
         throw new BadRequestException(
           'Una categoría no puede ser su propio padre',
@@ -143,15 +201,46 @@ export class CategoriesService extends SluggableService<
 
     const { tempImageId, ...categoryData } = dto;
 
-    await this.updateWithSlug(id, categoryData as UpdateCategoryDto);
+    // Paso 1: valida imagen antes de tocar la BD
+    const tempRecord =
+      tempImageId !== undefined
+        ? await this.imageRecord.findTempRecord(
+            tempImageId,
+            ENTITY_TYPE,
+            IMAGE_ROLE,
+          )
+        : null;
 
-    if (tempImageId !== undefined) {
-      await this.imageRecord.syncTempImageById(
-        tempImageId,
+    // Paso 2: mueve al disco (sin tocar BD)
+    let moved: MovedImageData | null = null;
+    if (tempRecord !== null) {
+      moved = await this.imageRecord.moveToFinal(
+        tempRecord,
         ENTITY_TYPE,
         id,
         IMAGE_ROLE,
       );
+    }
+
+    // Paso 3: BD atómica — update categoría + confirma imagen juntos
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await this.updateWithSlug(
+          id,
+          categoryData as UpdateCategoryDto,
+          undefined,
+          tx,
+        );
+
+        if (moved !== null) {
+          await this.imageRecord.confirmInDb(moved, tx);
+        }
+      });
+    } catch (error) {
+      if (moved !== null) {
+        await this.imageRecord.deleteFiles([moved.finalPath]);
+      }
+      throw error;
     }
 
     return this.findCategoryById(id);
@@ -160,6 +249,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // removeCategory
   // ═══════════════════════════════════════════════
+
   async removeCategory(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     await this.imageRecord.deleteEntityImages(ENTITY_TYPE, id);
@@ -169,6 +259,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // removeManyCategories
   // ═══════════════════════════════════════════════
+
   async removeManyCategories(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     await Promise.all(
@@ -178,8 +269,9 @@ export class CategoriesService extends SluggableService<
   }
 
   // ═══════════════════════════════════════════════
-  // getCategoryTree — árbol completo para navegación
+  // getCategoryTree
   // ═══════════════════════════════════════════════
+
   async getCategoryTree() {
     return this.prisma.category.findMany({
       where: { parentId: null, isActive: true, deletedAt: null },
@@ -202,6 +294,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // softDeleteCategory
   // ═══════════════════════════════════════════════
+
   async softDeleteCategory(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     return this.softDelete(id);
@@ -210,6 +303,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // softDeleteManyCategories
   // ═══════════════════════════════════════════════
+
   async softDeleteManyCategories(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     return this.softDeleteMany(ids);
@@ -218,6 +312,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // restoreCategory
   // ═══════════════════════════════════════════════
+
   async restoreCategory(id: string) {
     await this.assertNotDeleted(id);
     return this.restore(id);
@@ -226,6 +321,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
   // restoreManyCategories
   // ═══════════════════════════════════════════════
+
   async restoreManyCategories(ids: string[]) {
     return this.restoreMany(ids);
   }

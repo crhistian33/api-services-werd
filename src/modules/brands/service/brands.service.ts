@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { ImageEntityType, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SluggableService } from '../../../common/services/sluggable.service';
-import { ImageRecordService } from '../../images/services/image-record.service';
-import { CreateBrandDto } from '../dto/create-brand.dto';
-import { UpdateBrandDto } from '../dto/update-brand.dto';
-import { QueryBrandDto } from '../dto/query-brand.dto';
+import {
+  ImageRecordService,
+  MovedImageData,
+} from '../../images/services/image-record.service';
+import { CreateBrandDto, UpdateBrandDto, QueryBrandDto } from '../dto';
 
 type BrandEntity = Prisma.BrandGetPayload<{
   select: {
@@ -46,6 +47,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // findAllBrands
   // ═══════════════════════════════════════════════
+
   async findAllBrands(query: QueryBrandDto) {
     const { search, isActive, page, limit } = query;
 
@@ -72,6 +74,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // findBrandById
   // ═══════════════════════════════════════════════
+
   async findBrandById(id: string) {
     const brand = await this.findOne(id);
     return this.imageRecord.attachImagesToEntity(brand, ENTITY_TYPE);
@@ -80,6 +83,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // findBrandBySlug
   // ═══════════════════════════════════════════════
+
   async findBrandBySlug(slug: string) {
     const brand = await this.findBySlug(slug);
     return this.imageRecord.attachImagesToEntity(brand, ENTITY_TYPE);
@@ -87,42 +91,130 @@ export class BrandsService extends SluggableService<
 
   // ═══════════════════════════════════════════════
   // createBrand
-  // Flujo: BD → imagen (fuera de tx)
-  // Si BD falla → rollback automático, imagen sigue en /temp/
-  // Si imagen falla → BD creada, usuario puede resubir imagen
+  //
+  // Paso 1 — findTempRecord: valida la imagen (solo lectura)
+  //          Si falla: lanza error, nada fue tocado
+  // Paso 2 — moveToFinal: mueve archivo al disco
+  //          Si falla: archivo sigue en /temp/, nada en BD tocado
+  // Paso 3 — $transaction: crea el brand + confirmInDb juntos
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
+
   async createBrand(dto: CreateBrandDto) {
     const { tempImageId, ...brandData } = dto;
 
-    const brand = await this.createWithSlug(brandData as CreateBrandDto);
+    // Paso 1: valida imagen antes de tocar la BD
+    const tempRecord =
+      tempImageId !== undefined
+        ? await this.imageRecord.findTempRecord(
+            tempImageId,
+            ENTITY_TYPE,
+            IMAGE_ROLE,
+          )
+        : null;
 
-    if (tempImageId !== undefined) {
-      await this.imageRecord.syncTempImageById(
-        tempImageId,
+    // Paso 2: mueve al disco (sin tocar BD)
+    let moved: MovedImageData | null = null;
+    if (tempRecord !== null) {
+      moved = await this.imageRecord.moveToFinal(
+        tempRecord,
         ENTITY_TYPE,
-        brand.id,
+        '', // entityId aún no existe, se rellena en confirmInDb
         IMAGE_ROLE,
       );
     }
 
-    return this.findBrandById(brand.id);
+    // Paso 3: BD atómica — crea brand + confirma imagen juntos
+    try {
+      const brand = await this.prisma.$transaction(async (tx) => {
+        const slug = await this.generateUniqueSlug(
+          brandData.name,
+          undefined,
+          tx,
+        );
+        const created = await this.create(
+          { ...brandData, slug } as CreateBrandDto,
+          undefined,
+          tx,
+        );
+
+        if (moved !== null) {
+          // Ahora que tenemos el id real, lo inyectamos antes de confirmar
+          await this.imageRecord.confirmInDb(
+            { ...moved, entityId: created.id },
+            tx,
+          );
+        }
+
+        return created;
+      });
+
+      return this.findBrandById(brand.id);
+    } catch (error) {
+      // $transaction falló → revierte el archivo ya movido al disco
+      if (moved !== null) {
+        await this.imageRecord.deleteFiles([moved.finalPath]);
+      }
+      throw error;
+    }
   }
 
   // ═══════════════════════════════════════════════
   // updateBrand
+  //
+  // Paso 1 — findTempRecord: valida la imagen (solo lectura)
+  //          Si falla: lanza error, BD intacta, front mantiene el form
+  // Paso 2 — moveToFinal: mueve archivo al disco
+  //          Si falla: archivo sigue en /temp/, BD intacta
+  // Paso 3 — $transaction: update del brand + confirmInDb juntos
+  //          Si falla: deleteFiles revierte el disco, BD sin cambios
+  //          El front recibe el error con los datos del form intactos
   // ═══════════════════════════════════════════════
+
   async updateBrand(id: string, dto: UpdateBrandDto) {
     const { tempImageId, ...brandData } = dto;
 
-    await this.updateWithSlug(id, brandData as UpdateBrandDto);
+    // Paso 1: valida imagen antes de tocar la BD
+    const tempRecord =
+      tempImageId !== undefined
+        ? await this.imageRecord.findTempRecord(
+            tempImageId,
+            ENTITY_TYPE,
+            IMAGE_ROLE,
+          )
+        : null;
 
-    if (tempImageId !== undefined) {
-      await this.imageRecord.syncTempImageById(
-        tempImageId,
+    // Paso 2: mueve al disco (sin tocar BD)
+    let moved: MovedImageData | null = null;
+    if (tempRecord !== null) {
+      moved = await this.imageRecord.moveToFinal(
+        tempRecord,
         ENTITY_TYPE,
         id,
         IMAGE_ROLE,
       );
+    }
+
+    // Paso 3: BD atómica — update brand + confirma imagen juntos
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await this.updateWithSlug(
+          id,
+          brandData as UpdateBrandDto,
+          undefined,
+          tx,
+        );
+
+        if (moved !== null) {
+          await this.imageRecord.confirmInDb(moved, tx);
+        }
+      });
+    } catch (error) {
+      // $transaction falló → revierte el archivo ya movido al disco
+      if (moved !== null) {
+        await this.imageRecord.deleteFiles([moved.finalPath]);
+      }
+      throw error;
     }
 
     return this.findBrandById(id);
@@ -131,6 +223,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // removeBrand
   // ═══════════════════════════════════════════════
+
   async removeBrand(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     await this.imageRecord.deleteEntityImages(ENTITY_TYPE, id);
@@ -140,6 +233,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // removeManyBrands
   // ═══════════════════════════════════════════════
+
   async removeManyBrands(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     await Promise.all(
@@ -151,6 +245,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // softDeleteBrand
   // ═══════════════════════════════════════════════
+
   async softDeleteBrand(id: string) {
     await this.checkRelations(id, RELATION_CHECKS);
     return this.softDelete(id);
@@ -159,6 +254,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // softDeleteManyBrands
   // ═══════════════════════════════════════════════
+
   async softDeleteManyBrands(ids: string[]) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
     return this.softDeleteMany(ids);
@@ -167,6 +263,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // restoreBrand
   // ═══════════════════════════════════════════════
+
   async restoreBrand(id: string) {
     await this.assertNotDeleted(id);
     return this.restore(id);
@@ -175,6 +272,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
   // restoreManyBrands
   // ═══════════════════════════════════════════════
+
   async restoreManyBrands(ids: string[]) {
     return this.restoreMany(ids);
   }
