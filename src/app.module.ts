@@ -12,7 +12,6 @@ import { ProductsModule } from './modules/products/products.module';
 import { SiteConfigModule } from './modules/site-config/site-config.module';
 import { HeroSlidesModule } from './modules/hero-slides/hero-slides.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { PagesModule } from './modules/pages/pages.module';
 
 @Module({
   imports: [
@@ -29,7 +28,6 @@ import { PagesModule } from './modules/pages/pages.module';
     ProductsModule,
     SiteConfigModule,
     HeroSlidesModule,
-    PagesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
