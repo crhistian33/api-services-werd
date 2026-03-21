@@ -5,13 +5,25 @@ import {
 } from '@nestjs/common';
 import { BaseService, PrismaDatabaseClient } from './base.service';
 
+// Acepta DTOs con name o title — ambos son campos de texto para slug
+type WithSlugSource = { name: string } | { title: string };
+
 export abstract class SluggableService<
   T extends { id: string },
-  CreateDto extends { name: string },
-  UpdateDto extends { name?: string },
+  CreateDto extends WithSlugSource,
+  UpdateDto extends { name?: string; title?: string },
   WhereInput = object,
   OrderByInput = object,
 > extends BaseService<T, CreateDto, UpdateDto, WhereInput, OrderByInput> {
+  // ── Extrae el campo de texto fuente del slug (name o title) ────────
+  private getSlugSource(dto: WithSlugSource): string {
+    if ('name' in dto && dto.name) return dto.name;
+    if ('title' in dto && dto.title) return dto.title;
+    throw new BadRequestException(
+      'El DTO debe tener un campo "name" o "title" para generar el slug',
+    );
+  }
+
   // ── Genera slug URL-safe desde un nombre ────────────────────────────────────
   protected generateSlug(name: string): string {
     return name
@@ -91,7 +103,11 @@ export abstract class SluggableService<
     include?: object,
     client?: PrismaDatabaseClient,
   ): Promise<T> {
-    const slug = await this.generateUniqueSlug(dto.name, undefined, client);
+    const slug = await this.generateUniqueSlug(
+      this.getSlugSource(dto),
+      undefined,
+      client,
+    );
     return this.create({ ...dto, slug } as CreateDto, include, client);
   }
 
@@ -102,8 +118,15 @@ export abstract class SluggableService<
     include?: object,
     client?: PrismaDatabaseClient,
   ): Promise<T> {
-    const slug = dto.name
-      ? await this.generateUniqueSlug(dto.name, id, client)
+    const slugSource =
+      'name' in dto && dto.name
+        ? dto.name
+        : 'title' in dto && dto.title
+          ? dto.title
+          : undefined;
+
+    const slug = slugSource
+      ? await this.generateUniqueSlug(slugSource, id, client)
       : undefined;
 
     return this.update(
