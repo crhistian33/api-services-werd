@@ -31,7 +31,7 @@ import {
 } from '../dto';
 import { SetPriceDto } from '../dto/price-product.dto';
 import { SetSpecsDto, SetFeaturesDto } from '../dto/specs-product.dto';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 
 @ApiTags('Products')
 @Controller('products')

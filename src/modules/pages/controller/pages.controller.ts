@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { PagesService } from '../service/pages.service';
 import { CreatePageDto, UpdatePageDto } from '../dto';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import {
   BulkDeletePageDto,
   BulkRestorePageDto,

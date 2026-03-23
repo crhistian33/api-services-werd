@@ -17,7 +17,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { SiteConfigService } from '../service/site-config.service';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import {
   CreateSocialLinkDto,
   ReorderSocialLinksDto,

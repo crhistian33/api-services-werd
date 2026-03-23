@@ -24,7 +24,7 @@ import {
   UpdateHeroSlideDto,
   QueryHeroSlideDto,
 } from '../dto';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 
 @ApiTags('HeroSlides')
 @Controller('hero-slides')

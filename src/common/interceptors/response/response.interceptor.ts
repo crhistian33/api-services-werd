@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { RESPONSE_MESSAGE_KEY } from '../../decorators/response-message/response-message.decorator';
+import { RESPONSE_MESSAGE_KEY } from '../../decorators/response-message.decorator';
 import { AnyApiResponse } from '../../interfaces/api-response.interface';
 
 // ── Tipado interno para respuesta paginada ───────────────────

@@ -15,8 +15,9 @@ import {
   ApiTags,
   ApiOperation,
   ApiParam,
-  ApiOkResponse,
   ApiCreatedResponse,
+  ApiBearerAuth,
+  ApiForbiddenResponse,
 } from '@nestjs/swagger';
 import { CategoriesService } from '../service/categories.service';
 import {
@@ -27,62 +28,73 @@ import {
   BulkSoftDeleteCategoryDto,
   BulkRestoreCategoryDto,
 } from '../dto';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { AdminRole } from '../../auth/constants/admin-role.constant';
+import { Public } from '../../../common/decorators/public.decorator';
 
 @ApiTags('Categories')
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
-  // GET /categories
-  @Get()
-  @ResponseMessage('Categorías obtenidas exitosamente')
-  @ApiOperation({ summary: 'Listar categorías con paginación y filtros' })
-  @ApiOkResponse({ description: 'Lista paginada de categorías' })
-  findAll(@Query() query: QueryCategoryDto) {
-    return this.categoriesService.findAllCategories(query);
-  }
+  // ═══════════════════════════════════════════════
+  // RUTAS PÚBLICAS (Accesibles por Clientes y CMS)
+  // ═══════════════════════════════════════════════
 
-  // GET /categories/tree
+  @Public()
   @Get('tree')
   @ResponseMessage('Árbol de categorías obtenido exitosamente')
-  @ApiOperation({ summary: 'Árbol completo de categorías activas' })
+  @ApiOperation({ summary: 'Obtener árbol de categorías activas' })
   getCategoryTree() {
     return this.categoriesService.getCategoryTree();
   }
 
-  // GET /categories/slug/:slug
+  @Public()
   @Get('slug/:slug')
   @ResponseMessage('Categoría obtenida exitosamente')
-  @ApiOperation({ summary: 'Obtener categoría por slug' })
-  @ApiParam({ name: 'slug', example: 'laptops' })
+  @ApiOperation({ summary: 'Obtener categoría por su slug' })
+  @ApiParam({ name: 'slug', example: 'tecnologia-laptops' })
   findBySlug(@Param('slug') slug: string) {
     return this.categoriesService.findCategoryBySlug(slug);
   }
 
-  // GET /categories/:id
+  @Public()
   @Get(':id')
   @ResponseMessage('Categoría obtenida exitosamente')
-  @ApiOperation({ summary: 'Obtener categoría por ID' })
-  @ApiParam({ name: 'id', description: 'UUID de la categoría' })
+  @ApiOperation({ summary: 'Obtener categoría por UUID' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.categoriesService.findCategoryById(id);
   }
 
-  // POST /categories
+  // ═══════════════════════════════════════════════
+  // GESTIÓN OPERATIVA (ADMIN y SUPER_ADMIN)
+  // ═══════════════════════════════════════════════
+
+  @Get()
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Lista de categorías obtenida')
+  @ApiOperation({ summary: 'Listado administrativo con filtros y paginación' })
+  findAll(@Query() query: QueryCategoryDto) {
+    return this.categoriesService.findAllCategories(query);
+  }
+
   @Post()
-  @ResponseMessage('Categoría creada exitosamente')
-  @ApiOperation({ summary: 'Crear categoría' })
-  @ApiCreatedResponse({ description: 'Categoría creada' })
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categoría creada correctamente')
+  @ApiOperation({ summary: 'Crear una nueva categoría' })
+  @ApiCreatedResponse({ description: 'La categoría ha sido creada' })
   create(@Body() dto: CreateCategoryDto) {
     return this.categoriesService.createCategory(dto);
   }
 
-  // PATCH /categories/:id
   @Patch(':id')
-  @ResponseMessage('Categoría actualizada exitosamente')
-  @ApiOperation({ summary: 'Actualizar categoría' })
-  @ApiParam({ name: 'id', description: 'UUID de la categoría' })
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categoría actualizada correctamente')
+  @ApiOperation({ summary: 'Actualizar datos de una categoría' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoryDto,
@@ -90,54 +102,69 @@ export class CategoriesController {
     return this.categoriesService.updateCategory(id, dto);
   }
 
-  // DELETE /categories/bulk
-  @Delete('bulk')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Categorías eliminadas exitosamente')
-  @ApiOperation({ summary: 'Eliminar múltiples categorías' })
-  removeMany(@Body() dto: BulkDeleteCategoryDto) {
-    return this.categoriesService.removeManyCategories(dto.ids);
-  }
-
-  // PATCH /categories/bulk/soft-delete  ← estática antes que :id/soft-delete
-  @Patch('bulk/soft-delete')
-  @ResponseMessage('Categorías eliminadas (soft) exitosamente')
-  @ApiOperation({ summary: 'Soft-delete múltiples categorías' })
-  softDeleteMany(@Body() dto: BulkSoftDeleteCategoryDto) {
-    return this.categoriesService.softDeleteManyCategories(dto.ids);
-  }
-
-  // PATCH /categories/bulk/restore  ← estática antes que :id/restore
-  @Patch('bulk/restore')
-  @ResponseMessage('Categorías restauradas exitosamente')
-  @ApiOperation({ summary: 'Restaurar múltiples categorías' })
-  restoreMany(@Body() dto: BulkRestoreCategoryDto) {
-    return this.categoriesService.restoreManyCategories(dto.ids);
-  }
-
-  // DELETE /categories/:id
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Categoría eliminada exitosamente')
-  @ApiOperation({ summary: 'Eliminar categoría' })
-  @ApiParam({ name: 'id', description: 'UUID de la categoría' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categoriesService.removeCategory(id);
-  }
-
-  // PATCH /categories/:id/soft-delete
   @Patch(':id/soft-delete')
-  @ResponseMessage('Categoría eliminada exitosamente')
-  @ApiOperation({ summary: 'Soft-delete de categoría' })
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categoría enviada a la papelera')
+  @ApiOperation({ summary: 'Desactivar categoría (Soft Delete)' })
   softDelete(@Param('id', ParseUUIDPipe) id: string) {
     return this.categoriesService.softDeleteCategory(id);
   }
 
-  // PATCH /categories/:id/restore
+  @Patch('bulk/soft-delete')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categorías enviadas a la papelera')
+  @ApiOperation({ summary: 'Desactivación masiva de categorías' })
+  softDeleteMany(@Body() dto: BulkSoftDeleteCategoryDto) {
+    return this.categoriesService.softDeleteManyCategories(dto.ids);
+  }
+
   @Patch(':id/restore')
-  @ResponseMessage('Categoría restaurada exitosamente')
-  @ApiOperation({ summary: 'Restaurar categoría eliminada' })
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categoría restaurada correctamente')
+  @ApiOperation({ summary: 'Restaurar categoría desde la papelera' })
   restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.categoriesService.restoreCategory(id);
+  }
+
+  @Patch('bulk/restore')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categorías restauradas correctamente')
+  @ApiOperation({ summary: 'Restauración masiva de categorías' })
+  restoreMany(@Body() dto: BulkRestoreCategoryDto) {
+    return this.categoriesService.restoreManyCategories(dto.ids);
+  }
+
+  // ═══════════════════════════════════════════════
+  // ACCIONES CRÍTICAS (Solo SUPER_ADMIN)
+  // ═══════════════════════════════════════════════
+
+  @Delete('bulk')
+  @Roles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Categorías eliminadas permanentemente')
+  @ApiOperation({ summary: 'Eliminación física masiva (IRREVERSIBLE)' })
+  @ApiForbiddenResponse({
+    description: 'Acción permitida solo para Super Admin',
+  })
+  removeMany(@Body() dto: BulkDeleteCategoryDto) {
+    return this.categoriesService.removeManyCategories(dto.ids);
+  }
+
+  @Delete(':id')
+  @Roles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Categoría eliminada permanentemente')
+  @ApiOperation({ summary: 'Eliminación física por ID (IRREVERSIBLE)' })
+  @ApiForbiddenResponse({
+    description: 'Acción permitida solo para Super Admin',
+  })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.categoriesService.removeCategory(id);
   }
 }

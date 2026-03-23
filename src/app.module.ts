@@ -13,11 +13,17 @@ import { SiteConfigModule } from './modules/site-config/site-config.module';
 import { HeroSlidesModule } from './modules/hero-slides/hero-slides.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PagesModule } from './modules/pages/pages.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { jwtConfig } from './config/jwt.config';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
+      load: [jwtConfig],
+    }),
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
@@ -30,6 +36,7 @@ import { PagesModule } from './modules/pages/pages.module';
     SiteConfigModule,
     HeroSlidesModule,
     PagesModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

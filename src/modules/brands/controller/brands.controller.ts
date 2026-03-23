@@ -27,7 +27,7 @@ import {
   BulkSoftDeleteBrandDto,
   BulkRestoreBrandDto,
 } from '../dto';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 
 @ApiTags('Brands')
 @Controller('brands')

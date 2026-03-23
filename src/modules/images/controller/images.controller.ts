@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { ImageStorageService } from '../services/image-storage.service';
 import { ImageRecordService } from '../services/image-record.service';
-import { ResponseMessage } from '../../../common/decorators/response-message/response-message.decorator';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { IMAGE_CONFIGS } from '../config/image-config';
 
 @ApiTags('Images')
