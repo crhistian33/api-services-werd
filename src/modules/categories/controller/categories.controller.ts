@@ -59,12 +59,26 @@ export class CategoriesController {
     return this.categoriesService.findCategoryBySlug(slug);
   }
 
-  @Public()
-  @Get(':id')
-  @ResponseMessage('Categoría obtenida exitosamente')
-  @ApiOperation({ summary: 'Obtener categoría por UUID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categoriesService.findCategoryById(id);
+  // ═══════════════════════════════════════════════
+  // BULK (ANTES DE :id)
+  // ═══════════════════════════════════════════════
+
+  @Patch('bulk/soft-delete')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categorías enviadas a la papelera')
+  @ApiOperation({ summary: 'Desactivación masiva de categorías' })
+  softDeleteMany(@Body() dto: BulkSoftDeleteCategoryDto) {
+    return this.categoriesService.softDeleteManyCategories(dto.ids);
+  }
+
+  @Patch('bulk/restore')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categorías restauradas correctamente')
+  @ApiOperation({ summary: 'Restauración masiva de categorías' })
+  restoreMany(@Body() dto: BulkRestoreCategoryDto) {
+    return this.categoriesService.restoreManyCategories(dto.ids);
   }
 
   // ═══════════════════════════════════════════════
@@ -90,6 +104,35 @@ export class CategoriesController {
     return this.categoriesService.createCategory(dto);
   }
 
+  // ═══════════════════════════════════════════════
+  // ACCIONES CRÍTICAS BULK (ANTES DE :id)
+  // ═══════════════════════════════════════════════
+
+  @Delete('bulk')
+  @Roles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Categorías eliminadas permanentemente')
+  @ApiOperation({ summary: 'Eliminación física masiva (IRREVERSIBLE)' })
+  @ApiForbiddenResponse({
+    description: 'Acción permitida solo para Super Admin',
+  })
+  removeMany(@Body() dto: BulkDeleteCategoryDto) {
+    return this.categoriesService.removeManyCategories(dto.ids);
+  }
+
+  // ═══════════════════════════════════════════════
+  // RUTAS CON :id (AL FINAL SIEMPRE)
+  // ═══════════════════════════════════════════════
+
+  @Public()
+  @Get(':id')
+  @ResponseMessage('Categoría obtenida exitosamente')
+  @ApiOperation({ summary: 'Obtener categoría por UUID' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.categoriesService.findCategoryById(id);
+  }
+
   @Patch(':id')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
@@ -111,15 +154,6 @@ export class CategoriesController {
     return this.categoriesService.softDeleteCategory(id);
   }
 
-  @Patch('bulk/soft-delete')
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Categorías enviadas a la papelera')
-  @ApiOperation({ summary: 'Desactivación masiva de categorías' })
-  softDeleteMany(@Body() dto: BulkSoftDeleteCategoryDto) {
-    return this.categoriesService.softDeleteManyCategories(dto.ids);
-  }
-
   @Patch(':id/restore')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
@@ -127,32 +161,6 @@ export class CategoriesController {
   @ApiOperation({ summary: 'Restaurar categoría desde la papelera' })
   restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.categoriesService.restoreCategory(id);
-  }
-
-  @Patch('bulk/restore')
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Categorías restauradas correctamente')
-  @ApiOperation({ summary: 'Restauración masiva de categorías' })
-  restoreMany(@Body() dto: BulkRestoreCategoryDto) {
-    return this.categoriesService.restoreManyCategories(dto.ids);
-  }
-
-  // ═══════════════════════════════════════════════
-  // ACCIONES CRÍTICAS (Solo SUPER_ADMIN)
-  // ═══════════════════════════════════════════════
-
-  @Delete('bulk')
-  @Roles(AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Categorías eliminadas permanentemente')
-  @ApiOperation({ summary: 'Eliminación física masiva (IRREVERSIBLE)' })
-  @ApiForbiddenResponse({
-    description: 'Acción permitida solo para Super Admin',
-  })
-  removeMany(@Body() dto: BulkDeleteCategoryDto) {
-    return this.categoriesService.removeManyCategories(dto.ids);
   }
 
   @Delete(':id')

@@ -19,11 +19,14 @@ import {
   ApiConsumes,
   ApiBody,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ImageStorageService } from '../services/image-storage.service';
 import { ImageRecordService } from '../services/image-record.service';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { IMAGE_CONFIGS } from '../config/image-config';
+import { AdminRole } from '../../auth/constants/admin-role.constant';
+import { Roles } from '../../auth/decorators/roles.decorator';
 
 @ApiTags('Images')
 @Controller('images')
@@ -33,8 +36,9 @@ export class ImagesController {
     private readonly records: ImageRecordService,
   ) {}
 
-  // POST /images/upload?entityKey=category&imageRole=main
   @Post('upload')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Imagen cargada temporalmente')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   @ApiConsumes('multipart/form-data')
@@ -59,6 +63,7 @@ export class ImagesController {
     if (!file) throw new BadRequestException('No se recibió ningún archivo');
 
     const config = IMAGE_CONFIGS[entityKey];
+    console.log('Config obtenida para', entityKey, ':', config);
     if (!config) {
       throw new BadRequestException(
         `Entidad "${entityKey}" no soporta imágenes`,

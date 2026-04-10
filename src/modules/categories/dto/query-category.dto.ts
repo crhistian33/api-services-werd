@@ -1,13 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
-import { Type } from 'class-transformer';
-import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class QueryCategoryDto extends PaginationDto {
-  @ApiPropertyOptional({ example: true })
+  @ApiPropertyOptional({ type: Boolean, example: true })
   @IsOptional()
-  @Type(() => Boolean) // para query params: "true" → true
-  @IsBoolean()
+  @Transform(({ value }) => {
+    if (value === '' || value === undefined || value === null) return undefined;
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
+  })
   isActive?: boolean;
 
   @ApiPropertyOptional({
@@ -17,4 +21,17 @@ export class QueryCategoryDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   parentId?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Filtrar solo categorías eliminadas (soft-deleted)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === '' || value === undefined || value === null) return undefined;
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
+  })
+  onlyTrash?: boolean;
 }

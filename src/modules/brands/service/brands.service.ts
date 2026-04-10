@@ -49,7 +49,7 @@ export class BrandsService extends SluggableService<
   // ═══════════════════════════════════════════════
 
   async findAllBrands(query: QueryBrandDto) {
-    const { search, isActive, page, limit } = query;
+    const { search, isActive, page, limit, onlyTrash } = query;
 
     const result = await this.findAll({
       where: {
@@ -63,6 +63,7 @@ export class BrandsService extends SluggableService<
       },
       orderBy: { name: 'asc' },
       pagination: { page, limit },
+      onlyTrash,
     });
 
     return {

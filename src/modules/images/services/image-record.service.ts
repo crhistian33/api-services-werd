@@ -168,12 +168,18 @@ export class ImageRecordService {
     moved: MovedImageData,
     client: PrismaDatabaseClient,
   ): Promise<void> {
-    await this.deleteRoleImages(
-      moved.entityType,
-      moved.entityId,
-      moved.imageRole,
-      client,
-    );
+    // Solo reemplaza imágenes anteriores si el rol es único (main, logo, avatar, etc.)
+    // Para roles múltiples (gallery), simplemente agrega sin borrar las existentes
+    const isSingletonRole = moved.imageRole !== 'gallery';
+
+    if (isSingletonRole) {
+      await this.deleteRoleImages(
+        moved.entityType,
+        moved.entityId,
+        moved.imageRole,
+        client,
+      );
+    }
 
     await client.image.update({
       where: { id: moved.tempRecordId },
@@ -333,6 +339,42 @@ export class ImageRecordService {
     if (!image) {
       throw new NotFoundException(`Imagen con id "${imageId}" no encontrada`);
     }
+
+    const meta = image.metadata as { variants?: Record<string, string> };
+
+    if (meta?.variants) {
+      await Promise.all(
+        Object.values(meta.variants).map((variantUrl) =>
+          this.storage
+            .deleteFile(join(process.cwd(), variantUrl))
+            .catch(() => null),
+        ),
+      );
+    } else {
+      const path = image.finalPath ?? image.tempPath;
+      if (path) await this.storage.deleteFile(path).catch(() => null);
+    }
+
+    await db.image.delete({ where: { id: imageId } });
+  }
+
+  // ═══════════════════════════════════════════════
+  // deleteImageById — elimina una imagen confirmada por su ID
+  // Usado en update cuando el usuario borra la imagen sin reemplazarla.
+  // Acepta client para ejecutarse dentro de una $transaction externa.
+  // No lanza error si la imagen no existe (ya fue eliminada o nunca existió).
+  // ═══════════════════════════════════════════════
+
+  async deleteImageById(
+    imageId: string,
+    client?: PrismaDatabaseClient,
+  ): Promise<void> {
+    const db = client ?? this.prisma;
+
+    const image = await db.image.findUnique({ where: { id: imageId } });
+
+    // Si ya no existe, no es error — operación idempotente
+    if (!image) return;
 
     const meta = image.metadata as { variants?: Record<string, string> };
 

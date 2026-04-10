@@ -54,7 +54,7 @@ export class CategoriesService extends SluggableService<
   // ═══════════════════════════════════════════════
 
   async findAllCategories(query: QueryCategoryDto) {
-    const { search, isActive, parentId, page, limit } = query;
+    const { search, isActive, parentId, page, limit, onlyTrash } = query;
 
     const result = await this.findAll({
       where: {
@@ -73,6 +73,7 @@ export class CategoriesService extends SluggableService<
         _count: { select: { children: true, products: true } },
       },
       pagination: { page, limit },
+      onlyTrash,
     });
 
     return {
@@ -126,7 +127,7 @@ export class CategoriesService extends SluggableService<
 
     // Paso 1: valida imagen antes de tocar la BD
     const tempRecord =
-      tempImageId !== undefined
+      tempImageId !== undefined && tempImageId !== null
         ? await this.imageRecord.findTempRecord(
             tempImageId,
             ENTITY_TYPE,
@@ -199,11 +200,12 @@ export class CategoriesService extends SluggableService<
       await this.assertExists(dto.parentId);
     }
 
-    const { tempImageId, ...categoryData } = dto;
+    // Extrae removedImageId junto con tempImageId
+    const { tempImageId, removedImageId, ...categoryData } = dto;
 
-    // Paso 1: valida imagen antes de tocar la BD
+    // Paso 1: valida imagen nueva antes de tocar la BD
     const tempRecord =
-      tempImageId !== undefined
+      tempImageId !== undefined && tempImageId !== null
         ? await this.imageRecord.findTempRecord(
             tempImageId,
             ENTITY_TYPE,
@@ -222,7 +224,7 @@ export class CategoriesService extends SluggableService<
       );
     }
 
-    // Paso 3: BD atómica — update categoría + confirma imagen juntos
+    // Paso 3: BD atómica — update categoría + imagen juntos
     try {
       await this.prisma.$transaction(async (tx) => {
         await this.updateWithSlug(
@@ -233,7 +235,12 @@ export class CategoriesService extends SluggableService<
         );
 
         if (moved !== null) {
+          // Nueva imagen — confirmInDb elimina la anterior del mismo rol automáticamente
           await this.imageRecord.confirmInDb(moved, tx);
+        } else if (removedImageId) {
+          // Sin imagen nueva pero el usuario borró la actual
+          // Elimina el registro de BD y los archivos físicos
+          await this.imageRecord.deleteImageById(removedImageId, tx);
         }
       });
     } catch (error) {

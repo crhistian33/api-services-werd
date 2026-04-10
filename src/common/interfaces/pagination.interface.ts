@@ -5,6 +5,7 @@ export interface PaginationMeta {
   page: number;
   limit: number;
   totalPages: number;
+  trashedCount?: number;
 }
 
 export interface PaginatedResult<T> {
@@ -27,4 +28,5 @@ export interface FindAllParams<WhereInput, OrderByInput> {
    * Useful for endpoints that must return deleted records (restore flows, audit endpoints, etc).
    */
   includeDeleted?: boolean;
+  onlyTrash?: boolean;
 }

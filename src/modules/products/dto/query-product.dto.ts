@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsOptional, IsBoolean, IsEnum, IsUUID } from 'class-validator';
 import { ProductStatus } from 'generated/prisma/client';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
@@ -28,4 +28,17 @@ export class QueryProductDto extends PaginationDto {
   @Type(() => Boolean)
   @IsBoolean()
   isFeatured?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Filtrar solo categorías eliminadas (soft-deleted)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === '' || value === undefined || value === null) return undefined;
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
+  })
+  onlyTrash?: boolean;
 }

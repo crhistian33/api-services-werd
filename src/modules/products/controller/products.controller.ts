@@ -17,6 +17,7 @@ import {
   ApiParam,
   ApiOkResponse,
   ApiCreatedResponse,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ProductsService } from '../service/products.service';
 import { ProductPriceService } from '../service/product-price.service';
@@ -32,6 +33,9 @@ import {
 import { SetPriceDto } from '../dto/price-product.dto';
 import { SetSpecsDto, SetFeaturesDto } from '../dto/specs-product.dto';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
+import { BulkChangeStatusProductDto } from '../dto/bulk-change-status.dto';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { AdminRole } from '../../auth/constants/admin-role.constant';
 
 @ApiTags('Products')
 @Controller('products')
@@ -41,10 +45,6 @@ export class ProductsController {
     private readonly priceService: ProductPriceService, // ← nuevo
     private readonly specsService: ProductSpecsService, // ← nuevo
   ) {}
-
-  // ═══════════════════════════════════════════════
-  // Endpoints existentes — sin cambios
-  // ═══════════════════════════════════════════════
 
   @Get('public')
   @ResponseMessage('Productos obtenidos exitosamente')
@@ -72,6 +72,46 @@ export class ProductsController {
     return this.productsService.findProductBySlug(slug);
   }
 
+  @Post()
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Producto creado exitosamente')
+  @ApiOperation({ summary: 'Crear producto' })
+  @ApiCreatedResponse({ description: 'Producto creado' })
+  create(@Body() dto: CreateProductDto) {
+    console.log('DTO recibido en el controlador:', dto);
+    return this.productsService.createProduct(dto);
+  }
+
+  @Patch('bulk-status')
+  @ResponseMessage('Estados actualizados exitosamente')
+  @ApiOperation({ summary: 'Cambiar estado de múltiples productos' })
+  async changeStatus(@Body() dto: BulkChangeStatusProductDto) {
+    return this.productsService.changeStatusMany(dto.ids, dto.status);
+  }
+
+  @Delete('bulk')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Productos eliminados exitosamente')
+  @ApiOperation({ summary: 'Eliminar múltiples productos' })
+  removeMany(@Body() dto: BulkDeleteProductDto) {
+    return this.productsService.removeManyProducts(dto.ids);
+  }
+
+  @Patch('bulk/soft-delete')
+  @ResponseMessage('Productos eliminados (soft) exitosamente')
+  @ApiOperation({ summary: 'Soft-delete múltiples productos' })
+  softDeleteMany(@Body() dto: BulkSoftDeleteProductDto) {
+    return this.productsService.softDeleteManyProducts(dto.ids);
+  }
+
+  @Patch('bulk/restore')
+  @ResponseMessage('Productos restaurados exitosamente')
+  @ApiOperation({ summary: 'Restaurar múltiples productos' })
+  restoreMany(@Body() dto: BulkRestoreProductDto) {
+    return this.productsService.restoreManyProducts(dto.ids);
+  }
+
   @Get(':id')
   @ResponseMessage('Producto obtenido exitosamente')
   @ApiOperation({ summary: 'Obtener producto por ID' })
@@ -80,15 +120,9 @@ export class ProductsController {
     return this.productsService.findProductById(id);
   }
 
-  @Post()
-  @ResponseMessage('Producto creado exitosamente')
-  @ApiOperation({ summary: 'Crear producto' })
-  @ApiCreatedResponse({ description: 'Producto creado' })
-  create(@Body() dto: CreateProductDto) {
-    return this.productsService.createProduct(dto);
-  }
-
   @Patch(':id')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Producto actualizado exitosamente')
   @ApiOperation({ summary: 'Actualizar producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -99,9 +133,16 @@ export class ProductsController {
     return this.productsService.updateProduct(id, dto);
   }
 
-  // ═══════════════════════════════════════════════
-  // Precio — endpoints dedicados
-  // ═══════════════════════════════════════════════
+  @Delete(':id')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Producto eliminado exitosamente')
+  @ApiOperation({ summary: 'Eliminar producto' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productsService.removeProduct(id);
+  }
 
   @Get(':id/price')
   @ResponseMessage('Precio obtenido exitosamente')
@@ -127,10 +168,6 @@ export class ProductsController {
     return this.priceService.getPriceHistory(id);
   }
 
-  // ═══════════════════════════════════════════════
-  // Specs y features — endpoints dedicados
-  // ═══════════════════════════════════════════════
-
   @Patch(':id/specs')
   @ResponseMessage('Especificaciones actualizadas exitosamente')
   @ApiOperation({ summary: 'Reemplazar especificaciones del producto' })
@@ -148,41 +185,6 @@ export class ProductsController {
     @Body() dto: SetFeaturesDto,
   ) {
     return this.specsService.setFeatures(id, dto.features);
-  }
-
-  // ═══════════════════════════════════════════════
-  // Bulk — sin cambios
-  // ═══════════════════════════════════════════════
-
-  @Delete('bulk')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Productos eliminados exitosamente')
-  @ApiOperation({ summary: 'Eliminar múltiples productos' })
-  removeMany(@Body() dto: BulkDeleteProductDto) {
-    return this.productsService.removeManyProducts(dto.ids);
-  }
-
-  @Patch('bulk/soft-delete')
-  @ResponseMessage('Productos eliminados (soft) exitosamente')
-  @ApiOperation({ summary: 'Soft-delete múltiples productos' })
-  softDeleteMany(@Body() dto: BulkSoftDeleteProductDto) {
-    return this.productsService.softDeleteManyProducts(dto.ids);
-  }
-
-  @Patch('bulk/restore')
-  @ResponseMessage('Productos restaurados exitosamente')
-  @ApiOperation({ summary: 'Restaurar múltiples productos' })
-  restoreMany(@Body() dto: BulkRestoreProductDto) {
-    return this.productsService.restoreManyProducts(dto.ids);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Producto eliminado exitosamente')
-  @ApiOperation({ summary: 'Eliminar producto' })
-  @ApiParam({ name: 'id', description: 'UUID del producto' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productsService.removeProduct(id);
   }
 
   @Patch(':id/soft-delete')

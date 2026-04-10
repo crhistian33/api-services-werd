@@ -66,8 +66,19 @@ export abstract class BaseService<
   }
 
   // ── Soft delete filter ──────────────────────────────────────────────────────
-  protected softDeleteFilter(includeDeleted = false): object {
-    if (!this.useSoftDelete || includeDeleted) return {};
+  protected softDeleteFilter(
+    includeDeleted = false,
+    onlyTrash = false,
+  ): object {
+    if (!this.useSoftDelete) return {};
+
+    // Si pedimos explícitamente la papelera, ignoramos includeDeleted
+    if (onlyTrash) return { deletedAt: { not: null } };
+
+    // Si pedimos todo (activos + eliminados)
+    if (includeDeleted) return {};
+
+    // Comportamiento por defecto: solo activos
     return { deletedAt: null };
   }
 
@@ -170,18 +181,37 @@ export abstract class BaseService<
   async findAll(
     params: FindAllParams<WhereInput, OrderByInput> = {},
   ): Promise<PaginatedResult<T>> {
-    const { where, orderBy, include, select, pagination, includeDeleted } =
-      params;
+    const {
+      where,
+      orderBy,
+      include,
+      select,
+      pagination,
+      includeDeleted = false,
+      onlyTrash = false,
+    } = params;
 
+    console.log('Onlytrash en findAll:', onlyTrash);
     const page = pagination?.page ?? 1;
     const limit = pagination?.limit ?? 20;
 
+    // 1. Construimos el filtro de borrado lógico con máxima prioridad
+    let sfFilter = {};
+    if (this.useSoftDelete) {
+      if (onlyTrash) {
+        sfFilter = { deletedAt: { not: null } }; // 💡 Fuerza ver solo eliminados
+      } else if (!includeDeleted) {
+        sfFilter = { deletedAt: null }; // 💡 Fuerza ver solo activos
+      }
+    }
+    // Filtro dinámico: usa el helper que ya tienes para decidir qué traer
     const mergedWhere = {
-      ...this.softDeleteFilter(includeDeleted),
+      ...sfFilter,
       ...(where as object),
     };
 
-    const [data, total] = await Promise.all([
+    // ── Ejecución en Paralelo (Carga Rápida) ──────────────────────────────────
+    const [data, total, trashedCount] = await Promise.all([
       this.getModel().findMany({
         where: mergedWhere,
         orderBy,
@@ -190,12 +220,23 @@ export abstract class BaseService<
         include,
         select,
       }) as Promise<T[]>,
+
       this.getModel().count({ where: mergedWhere }),
+
+      // Conteo de basura: se ejecuta al mismo tiempo que los datos
+      this.useSoftDelete
+        ? this.getModel().count({
+            where: { deletedAt: { not: null } },
+          })
+        : Promise.resolve(0),
     ]);
 
     return {
       data,
-      meta: this.buildPaginationMeta(total, page, limit),
+      meta: {
+        ...this.buildPaginationMeta(total, page, limit),
+        ...(this.useSoftDelete ? { trashedCount } : {}),
+      },
     };
   }
 
@@ -230,6 +271,12 @@ export abstract class BaseService<
     include?: object,
     client?: PrismaDatabaseClient,
   ): Promise<T> {
+    console.log(
+      'Creando nuevo registro en',
+      this.modelName,
+      'con datos:',
+      data,
+    );
     return this.getModel(client).create({ data, include }) as Promise<T>;
   }
 
@@ -254,7 +301,7 @@ export abstract class BaseService<
   // remove
   // ═══════════════════════════════════════════════
   async remove(id: string, client?: PrismaDatabaseClient): Promise<T> {
-    await this.assertExists(id, false, client);
+    await this.assertExists(id, true, client);
     return this.getModel(client).delete({ where: { id } }) as Promise<T>;
   }
 

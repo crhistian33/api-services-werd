@@ -71,8 +71,16 @@ export class ProductsService extends SluggableService<
   // ═══════════════════════════════════════════════
 
   async findAllProducts(query: QueryProductDto) {
-    const { search, categoryId, brandId, status, isFeatured, page, limit } =
-      query;
+    const {
+      search,
+      categoryId,
+      brandId,
+      status,
+      isFeatured,
+      page,
+      limit,
+      onlyTrash,
+    } = query;
 
     const result = await this.findAll({
       where: {
@@ -92,6 +100,7 @@ export class ProductsService extends SluggableService<
       orderBy: [{ createdAt: 'desc' }],
       include: LIST_INCLUDE,
       pagination: { page, limit },
+      onlyTrash,
     });
 
     return {
@@ -176,6 +185,7 @@ export class ProductsService extends SluggableService<
       ...productData
     } = dto;
 
+    console.log('DTO recibido en el servicio:', dto);
     // Paso 1: valida todas las imágenes antes de tocar la BD
     const [mainTempRecord, galleryTempRecords] = await Promise.all([
       tempMainImageId !== undefined
@@ -197,6 +207,12 @@ export class ProductsService extends SluggableService<
           )
         : Promise.resolve(null),
     ]);
+
+    console.log(
+      'Registros temporales encontrados:',
+      mainTempRecord,
+      galleryTempRecords,
+    );
 
     // Paso 2: mueve todos los archivos al disco (sin tocar BD)
     const movedList: MovedImageData[] = [];
@@ -225,7 +241,9 @@ export class ProductsService extends SluggableService<
           movedList.push(moved);
         }
       }
+      console.log('Archivos movidos al disco:', movedList);
     } catch (error) {
+      console.log('Error al mover archivos al disco:', error);
       // Algún moveToFinal falló → revierte los archivos ya movidos
       await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
       throw error;
@@ -239,11 +257,19 @@ export class ProductsService extends SluggableService<
           undefined,
           tx,
         );
+        console.log('Slug generado en productos:', slug);
+
+        const dataToCreate: CreateProductDto = { ...productData };
+        if (dataToCreate.isFeatured === null) delete dataToCreate.isFeatured;
+        if (dataToCreate.status === null) delete dataToCreate.status;
+        if (dataToCreate.stock === null) delete dataToCreate.stock;
+
         const created = await this.create(
-          { ...productData, slug } as CreateProductDto,
+          { ...dataToCreate, slug } as CreateProductDto,
           undefined,
           tx,
         );
+        console.log('Producto creado en BD:', created);
 
         await Promise.all([
           price !== undefined
@@ -267,6 +293,8 @@ export class ProductsService extends SluggableService<
             ),
           ),
         ]);
+
+        console.log('Producto creado:', created);
 
         return created;
       });
@@ -295,6 +323,8 @@ export class ProductsService extends SluggableService<
     const {
       tempMainImageId,
       tempGalleryImageIds,
+      removedMainImageId,
+      removedGalleryImageIds,
       price,
       compareAtPrice,
       cost,
@@ -305,7 +335,7 @@ export class ProductsService extends SluggableService<
       ...productData
     } = dto;
 
-    // Paso 1: valida todas las imágenes antes de tocar la BD
+    // Paso 1: valida todas las imágenes nuevas antes de tocar la BD
     const [mainTempRecord, galleryTempRecords] = await Promise.all([
       tempMainImageId !== undefined
         ? this.imageRecord.findTempRecord(
@@ -327,7 +357,7 @@ export class ProductsService extends SluggableService<
         : Promise.resolve(null),
     ]);
 
-    // Paso 2: mueve todos los archivos al disco (sin tocar BD)
+    // Paso 2: mueve todos los archivos nuevos al disco (sin tocar BD)
     const movedList: MovedImageData[] = [];
 
     try {
@@ -359,17 +389,23 @@ export class ProductsService extends SluggableService<
       throw error;
     }
 
-    // Paso 3: BD atómica — update producto + datos + confirma imágenes
+    // Determina si viene una nueva imagen main (para no eliminar y añadir al mismo tiempo)
+    const hasNewMainImage = movedList.some(
+      (m) => m.imageRole === IMAGE_ROLE_MAIN,
+    );
+
+    // Paso 3: BD atómica — update producto + datos + imágenes
     try {
       await this.prisma.$transaction(async (tx) => {
-        await this.updateWithSlug(
-          id,
-          productData as UpdateProductDto,
-          undefined,
-          tx,
-        );
+        const dataToUpdate: UpdateProductDto = { ...productData };
+        if (dataToUpdate.isFeatured === null) delete dataToUpdate.isFeatured;
+        if (dataToUpdate.status === null) delete dataToUpdate.status;
+        if (dataToUpdate.stock === null) delete dataToUpdate.stock;
+
+        await this.updateWithSlug(id, dataToUpdate, undefined, tx);
 
         await Promise.all([
+          // Precio
           price !== undefined
             ? this.priceService.setPrice(
                 id,
@@ -377,12 +413,27 @@ export class ProductsService extends SluggableService<
                 tx,
               )
             : Promise.resolve(),
+
+          // Specs y features
           specs !== undefined
             ? this.specsService.setSpecs(id, specs ?? [], tx)
             : Promise.resolve(),
           features !== undefined
             ? this.specsService.setFeatures(id, features ?? [], tx)
             : Promise.resolve(),
+
+          // Imagen main: si viene nueva, confirmInDb elimina la anterior automáticamente.
+          // Si no viene nueva pero se pidió eliminar, elimina por ID.
+          !hasNewMainImage && removedMainImageId
+            ? this.imageRecord.deleteImageById(removedMainImageId, tx)
+            : Promise.resolve(),
+
+          // Imágenes de galería eliminadas individualmente por el usuario
+          ...(removedGalleryImageIds?.map((imgId) =>
+            this.imageRecord.deleteImageById(imgId, tx),
+          ) ?? []),
+
+          // Confirma todas las imágenes nuevas (confirmInDb elimina el rol anterior si aplica)
           ...movedList.map((moved) => this.imageRecord.confirmInDb(moved, tx)),
         ]);
       });
@@ -392,6 +443,25 @@ export class ProductsService extends SluggableService<
     }
 
     return this.findProductById(id);
+  }
+
+  /**
+   * Actualiza el estado de múltiples productos a la vez.
+   * @param ids Arreglo de UUIDs de los productos.
+   * @param status Nuevo estado (active, draft, inactive, out_of_stock).
+   */
+  async changeStatusMany(ids: string[], status: string) {
+    // Usamos el helper getModel() heredado de BaseService
+    return this.getModel().updateMany({
+      where: {
+        id: { in: ids },
+        // Importante: No cambiamos el estado a productos eliminados lógicamente
+        ...this.softDeleteFilter(),
+      },
+      data: {
+        status,
+      },
+    });
   }
 
   // ═══════════════════════════════════════════════
