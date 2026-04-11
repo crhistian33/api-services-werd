@@ -1,0 +1,15 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsArray, IsUUID, ArrayMinSize, IsEnum } from 'class-validator';
+import { PageStatus } from 'generated/prisma/enums';
+
+export class BulkChangeStatusPageDto {
+  @ApiProperty({ example: ['uuid1', 'uuid2'], type: [String] })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @ArrayMinSize(1)
+  ids: string[];
+
+  @ApiProperty({ enum: PageStatus })
+  @IsEnum(PageStatus)
+  status: PageStatus;
+}

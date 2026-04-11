@@ -17,10 +17,16 @@ export abstract class SluggableService<
 > extends BaseService<T, CreateDto, UpdateDto, WhereInput, OrderByInput> {
   // ── Extrae el campo de texto fuente del slug (name o title) ────────
   private getSlugSource(dto: WithSlugSource): string {
+    const slugSource = (dto as unknown as Record<string, string>)[
+      this.nameField
+    ];
+    if (this.nameField in dto && slugSource) {
+      return slugSource;
+    }
     if ('name' in dto && dto.name) return dto.name;
     if ('title' in dto && dto.title) return dto.title;
     throw new BadRequestException(
-      'El DTO debe tener un campo "name" o "title" para generar el slug',
+      `El DTO debe tener un campo "${this.nameField}" para generar el slug`,
     );
   }
 
@@ -119,11 +125,14 @@ export abstract class SluggableService<
     client?: PrismaDatabaseClient,
   ): Promise<T> {
     const slugSource =
-      'name' in dto && dto.name
-        ? dto.name
-        : 'title' in dto && dto.title
-          ? dto.title
-          : undefined;
+      this.nameField in dto &&
+      (dto as unknown as Record<string, string>)[this.nameField]
+        ? (dto as unknown as Record<string, string>)[this.nameField]
+        : 'name' in dto && dto.name
+          ? dto.name
+          : 'title' in dto && dto.title
+            ? dto.title
+            : undefined;
 
     const slug = slugSource
       ? await this.generateUniqueSlug(slugSource, id, client)
@@ -141,8 +150,16 @@ export abstract class SluggableService<
   async assertNotDeleted(id: string, friendlyName?: string): Promise<void> {
     const record = (await this.getModel().findUnique({
       where: { id },
-      select: { id: true, deletedAt: true, name: true },
-    })) as { id: string; name?: string; deletedAt: Date | null } | null;
+      select: {
+        id: true,
+        deletedAt: true,
+        [this.nameField]: true,
+      },
+    })) as {
+      id: string;
+      [key: string]: unknown;
+      deletedAt: Date | null;
+    } | null;
 
     if (!record) {
       throw new NotFoundException(
@@ -151,7 +168,9 @@ export abstract class SluggableService<
     }
 
     if (!record.deletedAt) {
-      const label = friendlyName ?? record.name ?? id;
+      const label = (friendlyName ??
+        (record as Record<string, unknown>)[this.nameField] ??
+        id) as string;
       throw new BadRequestException(
         `"${label}" no está eliminado, no se puede restaurar`,
       );

@@ -51,7 +51,7 @@ export class CategoriesController {
   }
 
   @Public()
-  @Get('slug/:slug')
+  @Get('public/:slug')
   @ResponseMessage('Categoría obtenida exitosamente')
   @ApiOperation({ summary: 'Obtener categoría por su slug' })
   @ApiParam({ name: 'slug', example: 'tecnologia-laptops' })
@@ -81,33 +81,6 @@ export class CategoriesController {
     return this.categoriesService.restoreManyCategories(dto.ids);
   }
 
-  // ═══════════════════════════════════════════════
-  // GESTIÓN OPERATIVA (ADMIN y SUPER_ADMIN)
-  // ═══════════════════════════════════════════════
-
-  @Get()
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Lista de categorías obtenida')
-  @ApiOperation({ summary: 'Listado administrativo con filtros y paginación' })
-  findAll(@Query() query: QueryCategoryDto) {
-    return this.categoriesService.findAllCategories(query);
-  }
-
-  @Post()
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Categoría creada correctamente')
-  @ApiOperation({ summary: 'Crear una nueva categoría' })
-  @ApiCreatedResponse({ description: 'La categoría ha sido creada' })
-  create(@Body() dto: CreateCategoryDto) {
-    return this.categoriesService.createCategory(dto);
-  }
-
-  // ═══════════════════════════════════════════════
-  // ACCIONES CRÍTICAS BULK (ANTES DE :id)
-  // ═══════════════════════════════════════════════
-
   @Delete('bulk')
   @Roles(AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
@@ -122,11 +95,45 @@ export class CategoriesController {
   }
 
   // ═══════════════════════════════════════════════
+  // COLECCIÓN
+  // ═══════════════════════════════════════════════
+
+  @Get()
+  @Roles(
+    AdminRole.ADMIN,
+    AdminRole.SUPER_ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Lista de categorías obtenida')
+  @ApiOperation({ summary: 'Listado administrativo con filtros y paginación' })
+  findAll(@Query() query: QueryCategoryDto) {
+    return this.categoriesService.findAllCategories(query);
+  }
+
+  @Post()
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Categoría creada correctamente')
+  @ApiOperation({ summary: 'Crear una nueva categoría' })
+  @ApiCreatedResponse({ description: 'La categoría ha sido creada' })
+  create(@Body() dto: CreateCategoryDto) {
+    return this.categoriesService.createCategory(dto);
+  }
+
+  // ═══════════════════════════════════════════════
   // RUTAS CON :id (AL FINAL SIEMPRE)
   // ═══════════════════════════════════════════════
 
-  @Public()
   @Get(':id')
+  @Roles(
+    AdminRole.ADMIN,
+    AdminRole.SUPER_ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Categoría obtenida exitosamente')
   @ApiOperation({ summary: 'Obtener categoría por UUID' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
@@ -134,7 +141,7 @@ export class CategoriesController {
   }
 
   @Patch(':id')
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
   @ApiBearerAuth('access-token')
   @ResponseMessage('Categoría actualizada correctamente')
   @ApiOperation({ summary: 'Actualizar datos de una categoría' })

@@ -27,6 +27,7 @@ export abstract class BaseService<
   OrderByInput = object,
 > {
   protected useSoftDelete = false;
+  protected nameField = 'name';
 
   constructor(
     protected readonly prisma: PrismaService,
@@ -116,8 +117,16 @@ export abstract class BaseService<
 
     const record = (await this.getModel().findUnique({
       where: { id },
-      select: { id: true, name: true, _count: { select: countSelect } },
-    })) as { id: string; name?: string; _count: Record<string, number> } | null;
+      select: {
+        id: true,
+        [this.nameField]: true,
+        _count: { select: countSelect },
+      },
+    })) as {
+      id: string;
+      [key: string]: unknown;
+      _count: Record<string, number>;
+    } | null;
 
     if (!record) {
       throw new NotFoundException(
@@ -132,8 +141,11 @@ export abstract class BaseService<
       }));
 
     if (conflicts.length > 0) {
+      const labelValue = (label ??
+        (record as Record<string, unknown>)[this.nameField] ??
+        id) as string;
       throw new ConflictException({
-        message: `No se puede eliminar "${label ?? record.name ?? id}".`,
+        message: `No se puede eliminar "${labelValue}".`,
         details: conflicts,
       });
     }
@@ -152,14 +164,24 @@ export abstract class BaseService<
 
     const records = (await this.getModel().findMany({
       where: { id: { in: ids } },
-      select: { id: true, name: true, _count: { select: countSelect } },
-    })) as { id: string; name?: string; _count: Record<string, number> }[];
+      select: {
+        id: true,
+        [this.nameField]: true,
+        _count: { select: countSelect },
+      },
+    })) as {
+      id: string;
+      [key: string]: unknown;
+      _count: Record<string, number>;
+    }[];
 
     const conflicts = records
       .filter((r) => checks.some((c) => r._count[c.countKey] > 0))
       .map((r) => ({
         id: r.id,
-        name: r.name,
+        name: (r as Record<string, unknown>)[this.nameField] as
+          | string
+          | undefined,
         reason: checks
           .filter((c) => r._count[c.countKey] > 0)
           .map((c) => `Tiene ${r._count[c.countKey]} ${c.label}`)

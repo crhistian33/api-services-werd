@@ -36,6 +36,7 @@ import { ResponseMessage } from '../../../common/decorators/response-message.dec
 import { BulkChangeStatusProductDto } from '../dto/bulk-change-status.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
+import { Public } from '../../../common/decorators/public.decorator';
 
 @ApiTags('Products')
 @Controller('products')
@@ -46,6 +47,11 @@ export class ProductsController {
     private readonly specsService: ProductSpecsService, // ← nuevo
   ) {}
 
+  // ═══════════════════════════════════════════════
+  // RUTAS PÚBLICAS (Accesibles por Clientes)
+  // ═══════════════════════════════════════════════
+
+  @Public()
   @Get('public')
   @ResponseMessage('Productos obtenidos exitosamente')
   @ApiOperation({ summary: 'Listado público de productos (sitio Astro)' })
@@ -56,49 +62,31 @@ export class ProductsController {
     return this.productsService.findAllProductsPublic(query);
   }
 
-  @Get()
-  @ResponseMessage('Productos obtenidos exitosamente')
-  @ApiOperation({ summary: 'Listar productos con paginación y filtros' })
-  @ApiOkResponse({ description: 'Lista paginada de productos' })
-  findAll(@Query() query: QueryProductDto) {
-    return this.productsService.findAllProducts(query);
-  }
-
-  @Get('slug/:slug')
+  @Public()
+  @Get('public/:slug')
   @ResponseMessage('Producto obtenido exitosamente')
   @ApiOperation({ summary: 'Obtener producto por slug' })
   @ApiParam({ name: 'slug', example: 'notebook-gamer-x' })
-  findBySlug(@Param('slug') slug: string) {
+  findBySlugPublic(@Param('slug') slug: string) {
     return this.productsService.findProductBySlug(slug);
   }
 
-  @Post()
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Producto creado exitosamente')
-  @ApiOperation({ summary: 'Crear producto' })
-  @ApiCreatedResponse({ description: 'Producto creado' })
-  create(@Body() dto: CreateProductDto) {
-    console.log('DTO recibido en el controlador:', dto);
-    return this.productsService.createProduct(dto);
-  }
+  // ═══════════════════════════════════════════════
+  // BULK (ANTES DE :id)
+  // ═══════════════════════════════════════════════
 
   @Patch('bulk-status')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Estados actualizados exitosamente')
   @ApiOperation({ summary: 'Cambiar estado de múltiples productos' })
   async changeStatus(@Body() dto: BulkChangeStatusProductDto) {
     return this.productsService.changeStatusMany(dto.ids, dto.status);
   }
 
-  @Delete('bulk')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Productos eliminados exitosamente')
-  @ApiOperation({ summary: 'Eliminar múltiples productos' })
-  removeMany(@Body() dto: BulkDeleteProductDto) {
-    return this.productsService.removeManyProducts(dto.ids);
-  }
-
   @Patch('bulk/soft-delete')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Productos eliminados (soft) exitosamente')
   @ApiOperation({ summary: 'Soft-delete múltiples productos' })
   softDeleteMany(@Body() dto: BulkSoftDeleteProductDto) {
@@ -106,13 +94,65 @@ export class ProductsController {
   }
 
   @Patch('bulk/restore')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Productos restaurados exitosamente')
   @ApiOperation({ summary: 'Restaurar múltiples productos' })
   restoreMany(@Body() dto: BulkRestoreProductDto) {
     return this.productsService.restoreManyProducts(dto.ids);
   }
 
+  @Delete('bulk')
+  @Roles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Productos eliminados exitosamente')
+  @ApiOperation({ summary: 'Eliminar múltiples productos' })
+  removeMany(@Body() dto: BulkDeleteProductDto) {
+    return this.productsService.removeManyProducts(dto.ids);
+  }
+
+  // ═══════════════════════════════════════════════
+  // COLECCIÓN
+  // ═══════════════════════════════════════════════
+
+  @Get()
+  @Roles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Productos obtenidos exitosamente')
+  @ApiOperation({ summary: 'Listar productos con paginación y filtros' })
+  @ApiOkResponse({ description: 'Lista paginada de productos' })
+  findAll(@Query() query: QueryProductDto) {
+    return this.productsService.findAllProducts(query);
+  }
+
+  @Post()
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Producto creado exitosamente')
+  @ApiOperation({ summary: 'Crear producto' })
+  @ApiCreatedResponse({ description: 'Producto creado' })
+  create(@Body() dto: CreateProductDto) {
+    return this.productsService.createProduct(dto);
+  }
+
+  // ═══════════════════════════════════════════════
+  // POR :id — siempre al final
+  // ═══════════════════════════════════════════════
+
   @Get(':id')
+  @Roles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Producto obtenido exitosamente')
   @ApiOperation({ summary: 'Obtener producto por ID' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -121,7 +161,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
   @ApiBearerAuth('access-token')
   @ResponseMessage('Producto actualizado exitosamente')
   @ApiOperation({ summary: 'Actualizar producto' })
@@ -133,18 +173,14 @@ export class ProductsController {
     return this.productsService.updateProduct(id, dto);
   }
 
-  @Delete(':id')
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Producto eliminado exitosamente')
-  @ApiOperation({ summary: 'Eliminar producto' })
-  @ApiParam({ name: 'id', description: 'UUID del producto' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productsService.removeProduct(id);
-  }
-
   @Get(':id/price')
+  @Roles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Precio obtenido exitosamente')
   @ApiOperation({ summary: 'Obtener precio actual del producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -153,6 +189,8 @@ export class ProductsController {
   }
 
   @Patch(':id/price')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Precio actualizado exitosamente')
   @ApiOperation({ summary: 'Actualizar precio del producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -161,6 +199,13 @@ export class ProductsController {
   }
 
   @Get(':id/price-history')
+  @Roles(
+    AdminRole.SUPER_ADMIN,
+    AdminRole.ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Historial de precios obtenido exitosamente')
   @ApiOperation({ summary: 'Historial de cambios de precio' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -169,6 +214,8 @@ export class ProductsController {
   }
 
   @Patch(':id/specs')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Especificaciones actualizadas exitosamente')
   @ApiOperation({ summary: 'Reemplazar especificaciones del producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -177,6 +224,8 @@ export class ProductsController {
   }
 
   @Patch(':id/features')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Características actualizadas exitosamente')
   @ApiOperation({ summary: 'Reemplazar características del producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -188,6 +237,8 @@ export class ProductsController {
   }
 
   @Patch(':id/soft-delete')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Producto eliminado exitosamente')
   @ApiOperation({ summary: 'Soft-delete de producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
@@ -196,10 +247,23 @@ export class ProductsController {
   }
 
   @Patch(':id/restore')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Producto restaurado exitosamente')
   @ApiOperation({ summary: 'Restaurar producto eliminado' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
   restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.productsService.restoreProduct(id);
+  }
+
+  @Delete(':id')
+  @Roles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Producto eliminado exitosamente')
+  @ApiOperation({ summary: 'Eliminar producto' })
+  @ApiParam({ name: 'id', description: 'UUID del producto' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productsService.removeProduct(id);
   }
 }

@@ -5,21 +5,9 @@ import { PageStatus, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SluggableService } from '../../../common/services/sluggable.service';
 import { CreatePageDto, UpdatePageDto } from '../dto';
+import { QueryPageDto } from '../dto/query-page.dto';
 
 type PageEntity = Prisma.PageGetPayload<object>;
-
-// Select para listados — omite content para no cargar HTML pesado
-const LIST_SELECT = {
-  id: true,
-  title: true,
-  slug: true,
-  status: true,
-  metaTitle: true,
-  metaDescription: true,
-  createdAt: true,
-  updatedAt: true,
-  deletedAt: true,
-} as const;
 
 @Injectable()
 export class PagesService extends SluggableService<
@@ -30,6 +18,7 @@ export class PagesService extends SluggableService<
   Prisma.PageOrderByWithRelationInput
 > {
   protected override useSoftDelete = true;
+  protected override nameField = 'title';
 
   constructor(prisma: PrismaService) {
     super(prisma, 'page');
@@ -39,11 +28,22 @@ export class PagesService extends SluggableService<
   // findAllPages — admin: todos los estados, sin content
   // ═══════════════════════════════════════════════
 
-  async findAllPages() {
-    return this.findAll({
-      select: LIST_SELECT,
-      orderBy: { title: 'asc' },
+  async findAllPages(query: QueryPageDto) {
+    const { search, status, page, limit, onlyTrash } = query;
+
+    const result = await this.findAll({
+      where: {
+        ...(status !== undefined && { status }),
+        ...(search !== undefined && {
+          OR: [{ title: { contains: search, mode: 'insensitive' } }],
+        }),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      pagination: { page, limit },
+      onlyTrash,
     });
+
+    return result;
   }
 
   // ═══════════════════════════════════════════════
@@ -51,12 +51,22 @@ export class PagesService extends SluggableService<
   // softDeleteFilter añade deletedAt: null automáticamente
   // ═══════════════════════════════════════════════
 
-  async findAllPagesPublic() {
-    return this.findAll({
-      where: { status: PageStatus.published },
-      select: LIST_SELECT,
-      orderBy: { title: 'asc' },
+  async findAllPagesPublic(query: QueryPageDto) {
+    const { search, page, limit } = query;
+
+    const result = await this.findAll({
+      where: {
+        status: 'published',
+        deletedAt: null,
+        ...(search !== undefined && {
+          OR: [{ title: { contains: search, mode: 'insensitive' } }],
+        }),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      pagination: { page, limit },
     });
+
+    return result;
   }
 
   // ═══════════════════════════════════════════════
@@ -164,18 +174,22 @@ export class PagesService extends SluggableService<
   }
 
   // ═══════════════════════════════════════════════
-  // publishPage — draft → published
+  // changeStatus — actualizar el estado de una página
   // ═══════════════════════════════════════════════
 
-  async publishPage(id: string) {
-    return this.update(id, { status: PageStatus.published } as UpdatePageDto);
+  async changeStatus(id: string, status: PageStatus) {
+    return this.update(id, { status } as UpdatePageDto);
   }
 
-  // ═══════════════════════════════════════════════
-  // unpublishPage — published → draft
-  // ═══════════════════════════════════════════════
-
-  async unpublishPage(id: string) {
-    return this.update(id, { status: PageStatus.draft } as UpdatePageDto);
+  async changeStatusMany(ids: string[], status: PageStatus) {
+    return this.getModel().updateMany({
+      where: {
+        id: { in: ids },
+        ...this.softDeleteFilter(),
+      },
+      data: {
+        status,
+      },
+    });
   }
 }
