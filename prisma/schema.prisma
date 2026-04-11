@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider     = "prisma-client"
   output       = "../generated/prisma"
@@ -125,15 +123,12 @@ model Image {
   id          String          @id @default(uuid())
   entityType  ImageEntityType
   entityId    String
-  // Roles: main | gallery | logo | logo_header | logo_footer
-  //        desktop | mobile | avatar | thumbnail
   imageRole   String
   tempPath    String?
   finalPath   String?
   url         String?
   order       Int             @default(0)
   altText     String?
-  // { width, height, size, format, mimeType }
   metadata    Json            @default("{}")
   isConfirmed Boolean         @default(false)
   createdAt   DateTime        @default(now())
@@ -141,7 +136,6 @@ model Image {
 
   @@index([entityType, entityId])
   @@index([entityType, entityId, imageRole])
-  // Índice parcial: solo temporales (para el cron de limpieza)
   @@index([isConfirmed, createdAt])
   @@map("images")
 }
@@ -158,14 +152,20 @@ model Category {
   parentId    String?
   isActive    Boolean   @default(true)
   sortOrder   Int       @default(0)
+  createdById String?
+  updatedById String?
+  deletedById String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime? // ← nuevo
+  deletedAt   DateTime?
 
   parent     Category?   @relation("CategoryTree", fields: [parentId], references: [id])
   children   Category[]  @relation("CategoryTree")
   products   Product[]
   heroSlides HeroSlide[]
+  createdBy  AdminUser?  @relation("CategoryCreatedBy", fields: [createdById], references: [id])
+  updatedBy  AdminUser?  @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy  AdminUser?  @relation("CategoryDeletedBy", fields: [deletedById], references: [id])
 
   @@index([deletedAt])
   @@index([parentId])
@@ -184,11 +184,17 @@ model Brand {
   slug        String    @unique
   description String?
   isActive    Boolean   @default(true)
+  createdById String?
+  updatedById String?
+  deletedById String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime? // ← nuevo
+  deletedAt   DateTime?
 
-  products Product[]
+  products  Product[]
+  createdBy AdminUser? @relation("BrandCreatedBy", fields: [createdById], references: [id])
+  updatedBy AdminUser? @relation("BrandUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy AdminUser? @relation("BrandDeletedBy", fields: [deletedById], references: [id])
 
   @@index([deletedAt])
   @@index([slug])
@@ -205,7 +211,7 @@ model Product {
   slug             String        @unique
   sku              String        @unique
   shortDescription String?
-  description      String? // HTML richText
+  description      String?
   categoryId       String
   brandId          String?
   status           ProductStatus @default(draft)
@@ -214,6 +220,9 @@ model Product {
   weight           Decimal?      @db.Decimal(8, 3)
   metaTitle        String?
   metaDescription  String?
+  createdById      String?
+  updatedById      String?
+  deletedById      String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
@@ -228,6 +237,9 @@ model Product {
   reviews      ProductReview[]
   cartItems    CartItem[]
   heroSlides   HeroSlide[]
+  createdBy    AdminUser?            @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  updatedBy    AdminUser?            @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy    AdminUser?            @relation("ProductDeletedBy", fields: [deletedById], references: [id])
 
   @@index([categoryId])
   @@index([brandId])
@@ -238,12 +250,10 @@ model Product {
   @@map("products")
 }
 
-// Precio actual del producto (1:1)
 model ProductPrice {
   id             String   @id @default(uuid())
   productId      String   @unique
   price          Decimal  @db.Decimal(12, 2)
-  // Precio tachado que se muestra en la tienda (precio anterior)
   compareAtPrice Decimal? @db.Decimal(12, 2)
   cost           Decimal? @db.Decimal(12, 2)
   currency       String   @default("PEN") @db.Char(3)
@@ -254,13 +264,11 @@ model ProductPrice {
   @@map("product_prices")
 }
 
-// Historial de cambios de precio (auditoría)
 model ProductPriceHistory {
   id            String   @id @default(uuid())
   productId     String
   price         Decimal  @db.Decimal(12, 2)
   cost          Decimal? @db.Decimal(12, 2)
-  // Calculado: (price - cost) / price
   marginPct     Decimal? @db.Decimal(6, 4)
   changedById   String?
   reason        String?
@@ -268,13 +276,12 @@ model ProductPriceHistory {
   createdAt     DateTime @default(now())
 
   product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  changedBy AdminUser? @relation(fields: [changedById], references: [id])
+  changedBy AdminUser? @relation("PriceHistoryChangedBy", fields: [changedById], references: [id])
 
   @@index([productId, effectiveFrom(sort: Desc)])
   @@map("product_price_history")
 }
 
-// Especificaciones técnicas (key / value)
 model ProductSpec {
   id        String @id @default(uuid())
   productId String
@@ -288,7 +295,6 @@ model ProductSpec {
   @@map("product_specs")
 }
 
-// Características (lista simple)
 model ProductFeature {
   id        String @id @default(uuid())
   productId String
@@ -312,17 +318,25 @@ model Promotion {
   discountType   DiscountType
   discountValue  Decimal         @db.Decimal(10, 2)
   appliesTo      PromotionTarget @default(global)
-  // Array de UUIDs de productos o categorías
   targetIds      String[]
   minOrderAmount Decimal?        @db.Decimal(12, 2)
   startsAt       DateTime
   endsAt         DateTime?
   isActive       Boolean         @default(true)
+  createdById    String?
+  updatedById    String?
+  deletedById    String?
   createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
 
   orderItems OrderItem[]
+  createdBy  AdminUser?  @relation("PromotionCreatedBy", fields: [createdById], references: [id])
+  updatedBy  AdminUser?  @relation("PromotionUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy  AdminUser?  @relation("PromotionDeletedBy", fields: [deletedById], references: [id])
 
   @@index([isActive, startsAt, endsAt])
+  @@index([deletedAt])
   @@map("promotions")
 }
 
@@ -345,13 +359,22 @@ model Coupon {
   startsAt          DateTime?
   expiresAt         DateTime?
   isActive          Boolean         @default(true)
+  createdById       String?
+  updatedById       String?
+  deletedById       String?
   createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  deletedAt         DateTime?
 
-  usages CouponUsage[]
-  orders Order[]
+  usages    CouponUsage[]
+  orders    Order[]
+  createdBy AdminUser?    @relation("CouponCreatedBy", fields: [createdById], references: [id])
+  updatedBy AdminUser?    @relation("CouponUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy AdminUser?    @relation("CouponDeletedBy", fields: [deletedById], references: [id])
 
   @@index([code])
   @@index([isActive, expiresAt])
+  @@index([deletedAt])
   @@map("coupons")
 }
 
@@ -433,7 +456,6 @@ model Cart {
   token      String     @unique @default(uuid())
   customerId String?
   status     CartStatus @default(active)
-  // Referencia al pedido cuando está en checkout_in_progress
   orderId    String?    @unique
   expiresAt  DateTime
   createdAt  DateTime   @default(now())
@@ -454,16 +476,13 @@ model CartItem {
   cartId         String
   productId      String
   quantity       Int
-  // Snapshot del precio al momento de agregar
   unitPrice      Decimal   @db.Decimal(12, 2)
-  // Para detectar si el precio cambió desde que se agregó
   priceUpdatedAt DateTime?
   addedAt        DateTime  @default(now())
 
   cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
 
-  // Un producto solo puede aparecer una vez por carrito
   @@unique([cartId, productId])
   @@index([cartId])
   @@map("cart_items")
@@ -478,17 +497,19 @@ model PaymentMethod {
   code         String            @unique
   name         String
   type         PaymentMethodType
-  // Config dinámica: { public_key, secret_key, environment }
-  // { phone_number, qr_image_path } | { whatsapp_number } etc.
   config       Json              @default("{}")
   instructions String?
   isActive     Boolean           @default(true)
   sortOrder    Int               @default(0)
+  createdById  String?
+  updatedById  String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
   orders       Order[]
   transactions OrderPaymentTransaction[]
+  createdBy    AdminUser?               @relation("PaymentMethodCreatedBy", fields: [createdById], references: [id])
+  updatedBy    AdminUser?               @relation("PaymentMethodUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([isActive])
   @@map("payment_methods")
@@ -504,11 +525,16 @@ model ShippingZone {
   description String?
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
+  createdById String?
+  updatedById String?
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  areas  ShippingZoneArea[]
-  rates  ShippingRate[]
-  orders Order[]
+  areas     ShippingZoneArea[]
+  rates     ShippingRate[]
+  orders    Order[]
+  createdBy AdminUser?         @relation("ShippingZoneCreatedBy", fields: [createdById], references: [id])
+  updatedBy AdminUser?         @relation("ShippingZoneUpdatedBy", fields: [updatedById], references: [id])
 
   @@map("shipping_zones")
 }
@@ -517,9 +543,7 @@ model ShippingZoneArea {
   id         String  @id @default(uuid())
   zoneId     String
   department String
-  // null = aplica a todo el departamento
   province   String?
-  // null = aplica a toda la provincia
   district   String?
 
   zone ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
@@ -535,13 +559,18 @@ model ShippingRate {
   name                  String
   price                 Decimal  @db.Decimal(10, 2)
   minOrderAmount        Decimal  @default(0) @db.Decimal(12, 2)
-  // Monto para obtener envío gratis (null = nunca)
   freeShippingThreshold Decimal? @db.Decimal(12, 2)
   estimatedDaysMin      Int?
   estimatedDaysMax      Int?
   isActive              Boolean  @default(true)
+  createdById           String?
+  updatedById           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  zone ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zone      ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  createdBy AdminUser?   @relation("ShippingRateCreatedBy", fields: [createdById], references: [id])
+  updatedBy AdminUser?   @relation("ShippingRateUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([zoneId])
   @@map("shipping_rates")
@@ -553,9 +582,7 @@ model ShippingRate {
 
 model Order {
   id              String      @id @default(uuid())
-  // Formato legible: ORD-20240101-0001
   orderNumber     String      @unique
-  // Cliente registrado o invitado (uno de los dos siempre presente)
   customerId      String?
   guestEmail      String?
   guestName       String?
@@ -569,7 +596,6 @@ model Order {
   couponId        String?
   couponDiscount  Decimal     @default(0) @db.Decimal(12, 2)
   paymentMethodId String
-  // Snapshot de la dirección al momento del pedido (no FK)
   shippingAddress Json
   shippingZoneId  String?
   notes           String?
@@ -605,14 +631,12 @@ model OrderItem {
   id             String   @id @default(uuid())
   orderId        String
   productId      String
-  // Snapshots: nunca depender del producto actual para datos históricos
   productName    String
   productSku     String
   quantity       Int
   unitPrice      Decimal  @db.Decimal(12, 2)
   unitCost       Decimal? @db.Decimal(12, 2)
   discountAmount Decimal  @default(0) @db.Decimal(12, 2)
-  // (unitPrice - discountAmount) * quantity
   lineTotal      Decimal  @db.Decimal(12, 2)
   promotionId    String?
 
@@ -632,12 +656,9 @@ model OrderPaymentTransaction {
   status               TransactionStatus @default(pending)
   amount               Decimal           @db.Decimal(12, 2)
   currency             String            @default("PEN") @db.Char(3)
-  // ID único del gateway (Culqi charge id, etc.) — UNIQUE para idempotencia
   gatewayTransactionId String?           @unique
-  // Para PagoEfectivo
   cipCode              String?
   cipExpiresAt         DateTime?
-  // Respuesta completa del gateway (auditoría)
   gatewayResponse      Json              @default("{}")
   paidAt               DateTime?
   createdAt            DateTime          @default(now())
@@ -655,13 +676,12 @@ model OrderStatusHistory {
   orderId     String
   fromStatus  OrderStatus?
   toStatus    OrderStatus
-  // null = cambio automático por sistema o webhook
   changedById String?
   comment     String?
   createdAt   DateTime     @default(now())
 
   order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  changedBy AdminUser? @relation(fields: [changedById], references: [id])
+  changedBy AdminUser? @relation("OrderStatusChangedBy", fields: [changedById], references: [id])
 
   @@index([orderId])
   @@map("order_status_history")
@@ -672,23 +692,23 @@ model OrderStatusHistory {
 // =============================================================
 
 model ProductReview {
-  id         String    @id @default(uuid())
-  productId  String
-  customerId String
-  // Verifica que el cliente haya comprado el producto
-  orderId    String
-  rating     Int
-  title      String?
-  comment    String?
-  isApproved Boolean   @default(false)
-  approvedAt DateTime?
-  createdAt  DateTime  @default(now())
+  id           String    @id @default(uuid())
+  productId    String
+  customerId   String
+  orderId      String
+  rating       Int
+  title        String?
+  comment      String?
+  isApproved   Boolean   @default(false)
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
 
-  product  Product  @relation(fields: [productId], references: [id])
-  customer Customer @relation(fields: [customerId], references: [id])
-  order    Order    @relation(fields: [orderId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id])
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  order      Order      @relation(fields: [orderId], references: [id])
+  reviewedBy AdminUser? @relation("ReviewReviewedBy", fields: [reviewedById], references: [id])
 
-  // Un cliente solo puede reseñar un producto una vez por compra
   @@unique([productId, customerId, orderId])
   @@index([productId])
   @@index([isApproved])
@@ -754,13 +774,21 @@ model HeroSlide {
   isActive       Boolean   @default(true)
   startsAt       DateTime?
   endsAt         DateTime?
+  createdById    String?
+  updatedById    String?
+  deletedById    String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
-  linkProduct  Product?  @relation(fields: [linkProductId], references: [id])
-  linkCategory Category? @relation(fields: [linkCategoryId], references: [id])
+  linkProduct  Product?   @relation(fields: [linkProductId], references: [id])
+  linkCategory Category?  @relation(fields: [linkCategoryId], references: [id])
+  createdBy    AdminUser? @relation("HeroSlideCreatedBy", fields: [createdById], references: [id])
+  updatedBy    AdminUser? @relation("HeroSlideUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy    AdminUser? @relation("HeroSlideDeletedBy", fields: [deletedById], references: [id])
 
   @@index([isActive, sortOrder])
+  @@index([deletedAt])
   @@map("hero_slides")
 }
 
@@ -772,16 +800,24 @@ model Page {
   id              String     @id @default(uuid())
   title           String
   slug            String     @unique
-  content         String? // HTML richText
+  content         String?
   metaTitle       String?
   metaDescription String?
   status          PageStatus @default(draft)
+  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   deletedAt       DateTime?
 
+  createdBy AdminUser? @relation("PageCreatedBy", fields: [createdById], references: [id])
+  updatedBy AdminUser? @relation("PageUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy AdminUser? @relation("PageDeletedBy", fields: [deletedById], references: [id])
+
   @@index([slug])
   @@index([status])
+  @@index([deletedAt])
   @@map("pages")
 }
 
@@ -803,10 +839,14 @@ model Complaint {
   description    String
   status         ComplaintStatus @default(open)
   adminResponse  String?
+  managedById    String?
+  resolvedById   String?
   createdAt      DateTime        @default(now())
   resolvedAt     DateTime?
 
-  order Order? @relation(fields: [orderId], references: [id])
+  order      Order?     @relation(fields: [orderId], references: [id])
+  managedBy  AdminUser? @relation("ComplaintManagedBy", fields: [managedById], references: [id])
+  resolvedBy AdminUser? @relation("ComplaintResolvedBy", fields: [resolvedById], references: [id])
 
   @@index([status])
   @@index([createdAt])
@@ -831,7 +871,6 @@ model AdminRole {
 
 model AdminPermission {
   id     String                @id @default(uuid())
-  // Formato: "products:create" | "orders:update" | "reports:view"
   code   String                @unique
   name   String
   module AdminPermissionModule
@@ -865,10 +904,69 @@ model AdminUser {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  role               AdminRole             @relation(fields: [roleId], references: [id])
-  priceChanges       ProductPriceHistory[]
-  orderStatusChanges OrderStatusHistory[]
+  // ── Relación con rol ──────────────────────────────────────
+  role AdminRole @relation(fields: [roleId], references: [id])
+
+  // ── Tokens ───────────────────────────────────────────────
   adminRefreshTokens AdminRefreshToken[]
+
+  // ── Productos ────────────────────────────────────────────
+  productsCreated Product[] @relation("ProductCreatedBy")
+  productsUpdated Product[] @relation("ProductUpdatedBy")
+  productsDeleted Product[] @relation("ProductDeletedBy")
+
+  // ── Categorías ───────────────────────────────────────────
+  categoriesCreated Category[] @relation("CategoryCreatedBy")
+  categoriesUpdated Category[] @relation("CategoryUpdatedBy")
+  categoriesDeleted Category[] @relation("CategoryDeletedBy")
+
+  // ── Marcas ───────────────────────────────────────────────
+  brandsCreated Brand[] @relation("BrandCreatedBy")
+  brandsUpdated Brand[] @relation("BrandUpdatedBy")
+  brandsDeleted Brand[] @relation("BrandDeletedBy")
+
+  // ── Promociones ──────────────────────────────────────────
+  promotionsCreated Promotion[] @relation("PromotionCreatedBy")
+  promotionsUpdated Promotion[] @relation("PromotionUpdatedBy")
+  promotionsDeleted Promotion[] @relation("PromotionDeletedBy")
+
+  // ── Cupones ──────────────────────────────────────────────
+  couponsCreated Coupon[] @relation("CouponCreatedBy")
+  couponsUpdated Coupon[] @relation("CouponUpdatedBy")
+  couponsDeleted Coupon[] @relation("CouponDeletedBy")
+
+  // ── Métodos de pago ──────────────────────────────────────
+  paymentMethodsCreated PaymentMethod[] @relation("PaymentMethodCreatedBy")
+  paymentMethodsUpdated PaymentMethod[] @relation("PaymentMethodUpdatedBy")
+
+  // ── Zonas y tarifas de envío ─────────────────────────────
+  shippingZonesCreated ShippingZone[] @relation("ShippingZoneCreatedBy")
+  shippingZonesUpdated ShippingZone[] @relation("ShippingZoneUpdatedBy")
+  shippingRatesCreated ShippingRate[] @relation("ShippingRateCreatedBy")
+  shippingRatesUpdated ShippingRate[] @relation("ShippingRateUpdatedBy")
+
+  // ── Hero Slides ──────────────────────────────────────────
+  heroSlidesCreated HeroSlide[] @relation("HeroSlideCreatedBy")
+  heroSlidesUpdated HeroSlide[] @relation("HeroSlideUpdatedBy")
+  heroSlidesDeleted HeroSlide[] @relation("HeroSlideDeletedBy")
+
+  // ── Páginas ──────────────────────────────────────────────
+  pagesCreated Page[] @relation("PageCreatedBy")
+  pagesUpdated Page[] @relation("PageUpdatedBy")
+  pagesDeleted Page[] @relation("PageDeletedBy")
+
+  // ── Historial de precios ─────────────────────────────────
+  priceChanges ProductPriceHistory[] @relation("PriceHistoryChangedBy")
+
+  // ── Historial de estados de pedidos ─────────────────────
+  orderStatusChanges OrderStatusHistory[] @relation("OrderStatusChangedBy")
+
+  // ── Reseñas ──────────────────────────────────────────────
+  reviewsReviewed ProductReview[] @relation("ReviewReviewedBy")
+
+  // ── Reclamaciones ────────────────────────────────────────
+  complaintsManaged  Complaint[] @relation("ComplaintManagedBy")
+  complaintsResolved Complaint[] @relation("ComplaintResolvedBy")
 
   @@index([email])
   @@map("admin_users")

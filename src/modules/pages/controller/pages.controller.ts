@@ -31,6 +31,8 @@ import { Roles } from '../../../modules/auth/decorators/roles.decorator';
 import { AdminRole } from '../../../modules/auth/constants/admin-role.constant';
 import { Public } from '../../../common/decorators/public.decorator';
 import { PageStatus } from 'generated/prisma/enums';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 
 @ApiTags('Pages')
 @Controller('pages')
@@ -66,8 +68,11 @@ export class PagesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Estados actualizados exitosamente')
   @ApiOperation({ summary: 'Cambiar estado de múltiples páginas' })
-  changeStatusMany(@Body() dto: BulkChangeStatusPageDto) {
-    return this.pagesService.changeStatusMany(dto.ids, dto.status);
+  changeStatusMany(
+    @Body() dto: BulkChangeStatusPageDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.pagesService.changeStatusMany(dto.ids, dto.status, admin.sub);
   }
 
   @Patch('bulk/soft-delete')
@@ -75,8 +80,11 @@ export class PagesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Páginas enviadas a la papelera')
   @ApiOperation({ summary: 'Soft-delete masivo' })
-  softDeleteMany(@Body() dto: BulkSoftDeletePageDto) {
-    return this.pagesService.softDeleteManyPages(dto.ids);
+  softDeleteMany(
+    @Body() dto: BulkSoftDeletePageDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.pagesService.softDeleteManyPages(dto.ids, admin.sub);
   }
 
   @Patch('bulk/restore')
@@ -84,8 +92,11 @@ export class PagesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Páginas restauradas exitosamente')
   @ApiOperation({ summary: 'Restaurar masivo' })
-  restoreMany(@Body() dto: BulkRestorePageDto) {
-    return this.pagesService.restoreManyPages(dto.ids);
+  restoreMany(
+    @Body() dto: BulkRestorePageDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.pagesService.restoreManyPages(dto.ids, admin.sub);
   }
 
   @Delete('bulk')
@@ -122,8 +133,8 @@ export class PagesController {
   @ResponseMessage('Página creada exitosamente')
   @ApiOperation({ summary: 'Crear página' })
   @ApiCreatedResponse({ description: 'Página creada' })
-  create(@Body() dto: CreatePageDto) {
-    return this.pagesService.createPage(dto);
+  create(@Body() dto: CreatePageDto, @CurrentUser() admin: AdminJwtPayload) {
+    return this.pagesService.createPage(dto, admin.sub);
   }
 
   // ═══════════════════════════════════════════════
@@ -163,8 +174,12 @@ export class PagesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Página actualizada exitosamente')
   @ApiOperation({ summary: 'Actualizar página' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePageDto) {
-    return this.pagesService.updatePage(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePageDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.pagesService.updatePage(id, dto, admin.sub);
   }
 
   @Patch(':id/status')
@@ -175,8 +190,9 @@ export class PagesController {
   changeStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() status: PageStatus,
+    @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.pagesService.changeStatus(id, status);
+    return this.pagesService.changeStatus(id, status, admin.sub);
   }
 
   @Patch(':id/soft-delete')
@@ -184,8 +200,11 @@ export class PagesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Página enviada a la papelera')
   @ApiOperation({ summary: 'Soft-delete página' })
-  softDelete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.pagesService.softDeletePage(id);
+  softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.pagesService.softDeletePage(id, admin.sub);
   }
 
   @Patch(':id/restore')
@@ -193,8 +212,11 @@ export class PagesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Página restaurada exitosamente')
   @ApiOperation({ summary: 'Restaurar página' })
-  restore(@Param('id', ParseUUIDPipe) id: string) {
-    return this.pagesService.restorePage(id);
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.pagesService.restorePage(id, admin.sub);
   }
 
   @Delete(':id')

@@ -32,6 +32,8 @@ import { ResponseMessage } from '../../../common/decorators/response-message.dec
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
 import { Public } from '../../../common/decorators/public.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -68,8 +70,11 @@ export class CategoriesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Categorías enviadas a la papelera')
   @ApiOperation({ summary: 'Desactivación masiva de categorías' })
-  softDeleteMany(@Body() dto: BulkSoftDeleteCategoryDto) {
-    return this.categoriesService.softDeleteManyCategories(dto.ids);
+  softDeleteMany(
+    @Body() dto: BulkSoftDeleteCategoryDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.categoriesService.softDeleteManyCategories(dto.ids, admin.sub);
   }
 
   @Patch('bulk/restore')
@@ -77,8 +82,11 @@ export class CategoriesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Categorías restauradas correctamente')
   @ApiOperation({ summary: 'Restauración masiva de categorías' })
-  restoreMany(@Body() dto: BulkRestoreCategoryDto) {
-    return this.categoriesService.restoreManyCategories(dto.ids);
+  restoreMany(
+    @Body() dto: BulkRestoreCategoryDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.categoriesService.restoreManyCategories(dto.ids, admin.sub);
   }
 
   @Delete('bulk')
@@ -118,8 +126,11 @@ export class CategoriesController {
   @ResponseMessage('Categoría creada correctamente')
   @ApiOperation({ summary: 'Crear una nueva categoría' })
   @ApiCreatedResponse({ description: 'La categoría ha sido creada' })
-  create(@Body() dto: CreateCategoryDto) {
-    return this.categoriesService.createCategory(dto);
+  create(
+    @Body() dto: CreateCategoryDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.categoriesService.createCategory(dto, admin.sub);
   }
 
   // ═══════════════════════════════════════════════
@@ -148,8 +159,9 @@ export class CategoriesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoryDto,
+    @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.categoriesService.updateCategory(id, dto);
+    return this.categoriesService.updateCategory(id, dto, admin.sub);
   }
 
   @Patch(':id/soft-delete')
@@ -157,8 +169,11 @@ export class CategoriesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Categoría enviada a la papelera')
   @ApiOperation({ summary: 'Desactivar categoría (Soft Delete)' })
-  softDelete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categoriesService.softDeleteCategory(id);
+  softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.categoriesService.softDeleteCategory(id, admin.sub);
   }
 
   @Patch(':id/restore')
@@ -166,8 +181,11 @@ export class CategoriesController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Categoría restaurada correctamente')
   @ApiOperation({ summary: 'Restaurar categoría desde la papelera' })
-  restore(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categoriesService.restoreCategory(id);
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.categoriesService.restoreCategory(id, admin.sub);
   }
 
   @Delete(':id')

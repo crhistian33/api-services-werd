@@ -15,6 +15,9 @@ type BrandEntity = Prisma.BrandGetPayload<{
     slug: true;
     description: true;
     isActive: true;
+    createdBy: { select: { id: true; name: true; email: true } };
+    updatedBy: { select: { id: true; name: true; email: true } };
+    deletedBy: { select: { id: true; name: true; email: true } };
     createdAt: true;
     updatedAt: true;
     deletedAt: true;
@@ -26,6 +29,14 @@ const IMAGE_ROLE = 'logo';
 const RELATION_CHECKS = [
   { countKey: 'products', label: 'producto(s) asignado(s)' },
 ];
+const LIST_INCLUDE = {
+  createdBy: { select: { id: true, name: true, email: true } },
+  updatedBy: { select: { id: true, name: true, email: true } },
+} as const;
+
+const TRASH_INCLUDE = {
+  deletedBy: { select: { id: true, name: true, email: true } },
+} as const;
 
 @Injectable()
 export class BrandsService extends SluggableService<
@@ -63,6 +74,7 @@ export class BrandsService extends SluggableService<
       },
       orderBy: { name: 'asc' },
       pagination: { page, limit },
+      include: onlyTrash ? TRASH_INCLUDE : LIST_INCLUDE,
       onlyTrash,
     });
 
@@ -101,7 +113,7 @@ export class BrandsService extends SluggableService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async createBrand(dto: CreateBrandDto) {
+  async createBrand(dto: CreateBrandDto, adminId: string) {
     const { tempImageId, ...brandData } = dto;
 
     // Paso 1: valida imagen antes de tocar la BD
@@ -134,7 +146,12 @@ export class BrandsService extends SluggableService<
           tx,
         );
         const created = await this.create(
-          { ...brandData, slug } as CreateBrandDto,
+          {
+            ...brandData,
+            createdById: adminId,
+            updatedById: adminId,
+            slug,
+          } as CreateBrandDto,
           undefined,
           tx,
         );
@@ -172,7 +189,7 @@ export class BrandsService extends SluggableService<
   //          El front recibe el error con los datos del form intactos
   // ═══════════════════════════════════════════════
 
-  async updateBrand(id: string, dto: UpdateBrandDto) {
+  async updateBrand(id: string, dto: UpdateBrandDto, adminId: string) {
     const { tempImageId, ...brandData } = dto;
 
     // Paso 1: valida imagen antes de tocar la BD
@@ -201,7 +218,7 @@ export class BrandsService extends SluggableService<
       await this.prisma.$transaction(async (tx) => {
         await this.updateWithSlug(
           id,
-          brandData as UpdateBrandDto,
+          { ...brandData, updatedById: adminId } as UpdateBrandDto,
           undefined,
           tx,
         );
@@ -247,34 +264,34 @@ export class BrandsService extends SluggableService<
   // softDeleteBrand
   // ═══════════════════════════════════════════════
 
-  async softDeleteBrand(id: string) {
+  async softDeleteBrand(id: string, adminId: string) {
     await this.checkRelations(id, RELATION_CHECKS);
-    return this.softDelete(id);
+    return this.softDelete(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // softDeleteManyBrands
   // ═══════════════════════════════════════════════
 
-  async softDeleteManyBrands(ids: string[]) {
+  async softDeleteManyBrands(ids: string[], adminId: string) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
-    return this.softDeleteMany(ids);
+    return this.softDeleteMany(ids, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreBrand
   // ═══════════════════════════════════════════════
 
-  async restoreBrand(id: string) {
+  async restoreBrand(id: string, adminId: string) {
     await this.assertNotDeleted(id);
-    return this.restore(id);
+    return this.restore(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreManyBrands
   // ═══════════════════════════════════════════════
 
-  async restoreManyBrands(ids: string[]) {
-    return this.restoreMany(ids);
+  async restoreManyBrands(ids: string[], adminId: string) {
+    return this.restoreMany(ids, adminId);
   }
 }

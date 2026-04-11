@@ -12,6 +12,9 @@ type CategoryEntity = Prisma.CategoryGetPayload<{
   include: {
     parent: { select: { id: true; name: true; slug: true } };
     children: true;
+    createdBy: { select: { id: true; name: true; email: true } };
+    updatedBy: { select: { id: true; name: true; email: true } };
+    deletedBy: { select: { id: true; name: true; email: true } };
   };
 }>;
 
@@ -21,6 +24,15 @@ const RELATION_CHECKS = [
   { countKey: 'products', label: 'producto(s) asignado(s)' },
   { countKey: 'children', label: 'subcategoría(s)' },
 ];
+
+const LIST_INCLUDE = {
+  createdBy: { select: { id: true, name: true, email: true } },
+  updatedBy: { select: { id: true, name: true, email: true } },
+} as const;
+
+const TRASH_INCLUDE = {
+  deletedBy: { select: { id: true, name: true, email: true } },
+} as const;
 
 const DETAIL_INCLUDE = {
   parent: { select: { id: true, name: true, slug: true } },
@@ -71,6 +83,7 @@ export class CategoriesService extends SluggableService<
       include: {
         parent: { select: { id: true, name: true, slug: true } },
         _count: { select: { children: true, products: true } },
+        ...(onlyTrash ? TRASH_INCLUDE : LIST_INCLUDE),
       },
       pagination: { page, limit },
       onlyTrash,
@@ -118,7 +131,7 @@ export class CategoriesService extends SluggableService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async createCategory(dto: CreateCategoryDto) {
+  async createCategory(dto: CreateCategoryDto, adminId: string) {
     if (dto.parentId !== undefined && dto.parentId !== null) {
       await this.assertExists(dto.parentId);
     }
@@ -155,7 +168,12 @@ export class CategoriesService extends SluggableService<
           tx,
         );
         const created = await this.create(
-          { ...categoryData, slug } as CreateCategoryDto,
+          {
+            ...categoryData,
+            slug,
+            createdBy: adminId,
+            updatedById: adminId,
+          } as CreateCategoryDto,
           undefined,
           tx,
         );
@@ -190,7 +208,7 @@ export class CategoriesService extends SluggableService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async updateCategory(id: string, dto: UpdateCategoryDto) {
+  async updateCategory(id: string, dto: UpdateCategoryDto, adminId: string) {
     if (dto.parentId !== undefined && dto.parentId !== null) {
       if (dto.parentId === id) {
         throw new BadRequestException(
@@ -229,17 +247,14 @@ export class CategoriesService extends SluggableService<
       await this.prisma.$transaction(async (tx) => {
         await this.updateWithSlug(
           id,
-          categoryData as UpdateCategoryDto,
+          { ...categoryData, updatedById: adminId } as UpdateCategoryDto,
           undefined,
           tx,
         );
 
         if (moved !== null) {
-          // Nueva imagen — confirmInDb elimina la anterior del mismo rol automáticamente
           await this.imageRecord.confirmInDb(moved, tx);
         } else if (removedImageId) {
-          // Sin imagen nueva pero el usuario borró la actual
-          // Elimina el registro de BD y los archivos físicos
           await this.imageRecord.deleteImageById(removedImageId, tx);
         }
       });
@@ -302,34 +317,34 @@ export class CategoriesService extends SluggableService<
   // softDeleteCategory
   // ═══════════════════════════════════════════════
 
-  async softDeleteCategory(id: string) {
+  async softDeleteCategory(id: string, adminId: string) {
     await this.checkRelations(id, RELATION_CHECKS);
-    return this.softDelete(id);
+    return this.softDelete(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // softDeleteManyCategories
   // ═══════════════════════════════════════════════
 
-  async softDeleteManyCategories(ids: string[]) {
+  async softDeleteManyCategories(ids: string[], adminId: string) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
-    return this.softDeleteMany(ids);
+    return this.softDeleteMany(ids, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreCategory
   // ═══════════════════════════════════════════════
 
-  async restoreCategory(id: string) {
+  async restoreCategory(id: string, adminId: string) {
     await this.assertNotDeleted(id);
-    return this.restore(id);
+    return this.restore(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreManyCategories
   // ═══════════════════════════════════════════════
 
-  async restoreManyCategories(ids: string[]) {
-    return this.restoreMany(ids);
+  async restoreManyCategories(ids: string[], adminId: string) {
+    return this.restoreMany(ids, adminId);
   }
 }

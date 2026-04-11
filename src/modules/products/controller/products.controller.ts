@@ -37,6 +37,8 @@ import { BulkChangeStatusProductDto } from '../dto/bulk-change-status.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
 import { Public } from '../../../common/decorators/public.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 
 @ApiTags('Products')
 @Controller('products')
@@ -80,8 +82,15 @@ export class ProductsController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Estados actualizados exitosamente')
   @ApiOperation({ summary: 'Cambiar estado de múltiples productos' })
-  async changeStatus(@Body() dto: BulkChangeStatusProductDto) {
-    return this.productsService.changeStatusMany(dto.ids, dto.status);
+  async changeStatus(
+    @Body() dto: BulkChangeStatusProductDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.productsService.changeStatusMany(
+      dto.ids,
+      dto.status,
+      admin.sub,
+    );
   }
 
   @Patch('bulk/soft-delete')
@@ -89,8 +98,11 @@ export class ProductsController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Productos eliminados (soft) exitosamente')
   @ApiOperation({ summary: 'Soft-delete múltiples productos' })
-  softDeleteMany(@Body() dto: BulkSoftDeleteProductDto) {
-    return this.productsService.softDeleteManyProducts(dto.ids);
+  softDeleteMany(
+    @Body() dto: BulkSoftDeleteProductDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.productsService.softDeleteManyProducts(dto.ids, admin.sub);
   }
 
   @Patch('bulk/restore')
@@ -98,8 +110,11 @@ export class ProductsController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Productos restaurados exitosamente')
   @ApiOperation({ summary: 'Restaurar múltiples productos' })
-  restoreMany(@Body() dto: BulkRestoreProductDto) {
-    return this.productsService.restoreManyProducts(dto.ids);
+  restoreMany(
+    @Body() dto: BulkRestoreProductDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.productsService.restoreManyProducts(dto.ids, admin.sub);
   }
 
   @Delete('bulk')
@@ -137,8 +152,8 @@ export class ProductsController {
   @ResponseMessage('Producto creado exitosamente')
   @ApiOperation({ summary: 'Crear producto' })
   @ApiCreatedResponse({ description: 'Producto creado' })
-  create(@Body() dto: CreateProductDto) {
-    return this.productsService.createProduct(dto);
+  create(@Body() dto: CreateProductDto, @CurrentUser() admin: AdminJwtPayload) {
+    return this.productsService.createProduct(dto, admin.sub);
   }
 
   // ═══════════════════════════════════════════════
@@ -169,8 +184,9 @@ export class ProductsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
+    @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.productsService.updateProduct(id, dto);
+    return this.productsService.updateProduct(id, dto, admin.sub);
   }
 
   @Get(':id/price')
@@ -242,8 +258,11 @@ export class ProductsController {
   @ResponseMessage('Producto eliminado exitosamente')
   @ApiOperation({ summary: 'Soft-delete de producto' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
-  softDelete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productsService.softDeleteProduct(id);
+  softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.productsService.softDeleteProduct(id, admin.sub);
   }
 
   @Patch(':id/restore')
@@ -252,8 +271,11 @@ export class ProductsController {
   @ResponseMessage('Producto restaurado exitosamente')
   @ApiOperation({ summary: 'Restaurar producto eliminado' })
   @ApiParam({ name: 'id', description: 'UUID del producto' })
-  restore(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productsService.restoreProduct(id);
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.productsService.restoreProduct(id, admin.sub);
   }
 
   @Delete(':id')

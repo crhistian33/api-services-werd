@@ -7,7 +7,22 @@ import { SluggableService } from '../../../common/services/sluggable.service';
 import { CreatePageDto, UpdatePageDto } from '../dto';
 import { QueryPageDto } from '../dto/query-page.dto';
 
-type PageEntity = Prisma.PageGetPayload<object>;
+type PageEntity = Prisma.PageGetPayload<{
+  include: {
+    createdBy: { select: { id: true; name: true; email: true } };
+    updatedBy: { select: { id: true; name: true; email: true } };
+    deletedBy: { select: { id: true; name: true; email: true } };
+  };
+}>;
+
+const LIST_INCLUDE = {
+  createdBy: { select: { id: true, name: true, email: true } },
+  updatedBy: { select: { id: true, name: true, email: true } },
+} as const;
+
+const TRASH_INCLUDE = {
+  deletedBy: { select: { id: true, name: true, email: true } },
+} as const;
 
 @Injectable()
 export class PagesService extends SluggableService<
@@ -40,6 +55,7 @@ export class PagesService extends SluggableService<
       },
       orderBy: [{ createdAt: 'desc' }],
       pagination: { page, limit },
+      include: onlyTrash ? TRASH_INCLUDE : LIST_INCLUDE,
       onlyTrash,
     });
 
@@ -109,52 +125,63 @@ export class PagesService extends SluggableService<
   // createPage — slug generado desde title
   // ═══════════════════════════════════════════════
 
-  async createPage(dto: CreatePageDto) {
-    return this.createWithSlug({
-      ...dto,
-      status: dto.status ?? PageStatus.draft,
-    } as CreatePageDto);
+  async createPage(dto: CreatePageDto, adminId: string) {
+    return this.createWithSlug(
+      {
+        ...dto,
+        status: dto.status ?? PageStatus.draft,
+        createdById: adminId,
+        updatedById: adminId,
+      } as CreatePageDto,
+      undefined,
+      undefined,
+    );
   }
 
   // ═══════════════════════════════════════════════
   // updatePage — si viene title regenera el slug
   // ═══════════════════════════════════════════════
 
-  async updatePage(id: string, dto: UpdatePageDto) {
-    return this.updateWithSlug(id, dto);
+  async updatePage(id: string, dto: UpdatePageDto, adminId: string) {
+    return this.updateWithSlug(
+      id,
+      { ...dto, updatedById: adminId } as UpdatePageDto,
+      undefined,
+      undefined,
+    );
   }
 
   // ═══════════════════════════════════════════════
   // softDeletePage
   // ═══════════════════════════════════════════════
 
-  async softDeletePage(id: string) {
-    return this.softDelete(id);
+  async softDeletePage(id: string, adminId: string) {
+    return this.softDelete(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // softDeleteManyPages
   // ═══════════════════════════════════════════════
 
-  async softDeleteManyPages(ids: string[]) {
-    return this.softDeleteMany(ids);
+  async softDeleteManyPages(ids: string[], adminId: string) {
+    return this.softDeleteMany(ids, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restorePage
   // ═══════════════════════════════════════════════
 
-  async restorePage(id: string) {
+  async restorePage(id: string, adminId: string) {
     await this.assertNotDeleted(id);
-    return this.restore(id);
+    return this.restore(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreManyPages
   // ═══════════════════════════════════════════════
 
-  async restoreManyPages(ids: string[]) {
-    return this.restoreMany(ids);
+  async restoreManyPages(ids: string[], adminId: string) {
+    return this.restoreMany(ids, adminId);
   }
 
   // ═══════════════════════════════════════════════
@@ -177,11 +204,11 @@ export class PagesService extends SluggableService<
   // changeStatus — actualizar el estado de una página
   // ═══════════════════════════════════════════════
 
-  async changeStatus(id: string, status: PageStatus) {
-    return this.update(id, { status } as UpdatePageDto);
+  async changeStatus(id: string, status: PageStatus, adminId: string) {
+    return this.update(id, { status, updatedById: adminId } as UpdatePageDto);
   }
 
-  async changeStatusMany(ids: string[], status: PageStatus) {
+  async changeStatusMany(ids: string[], status: PageStatus, adminId: string) {
     return this.getModel().updateMany({
       where: {
         id: { in: ids },
@@ -189,6 +216,7 @@ export class PagesService extends SluggableService<
       },
       data: {
         status,
+        updatedById: adminId,
       },
     });
   }

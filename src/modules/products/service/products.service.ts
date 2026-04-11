@@ -17,6 +17,9 @@ type ProductEntity = Prisma.ProductGetPayload<{
     price: true;
     specs: true;
     features: true;
+    createdBy: { select: { id: true; name: true; email: true } };
+    updatedBy: { select: { id: true; name: true; email: true } };
+    deletedBy: { select: { id: true; name: true; email: true } };
   };
 }>;
 
@@ -39,6 +42,15 @@ const DETAIL_INCLUDE = {
 const LIST_INCLUDE = {
   category: { select: { id: true, name: true, slug: true } },
   brand: { select: { id: true, name: true, slug: true } },
+  createdBy: { select: { id: true, name: true, email: true } },
+  updatedBy: { select: { id: true, name: true, email: true } },
+  price: true,
+} as const;
+
+const TRASH_INCLUDE = {
+  category: { select: { id: true, name: true, slug: true } },
+  brand: { select: { id: true, name: true, slug: true } },
+  deletedBy: { select: { id: true, name: true, email: true } },
   price: true,
 } as const;
 
@@ -98,7 +110,7 @@ export class ProductsService extends SluggableService<
         }),
       },
       orderBy: [{ createdAt: 'desc' }],
-      include: LIST_INCLUDE,
+      include: onlyTrash ? TRASH_INCLUDE : LIST_INCLUDE,
       pagination: { page, limit },
       onlyTrash,
     });
@@ -173,7 +185,7 @@ export class ProductsService extends SluggableService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async createProduct(dto: CreateProductDto) {
+  async createProduct(dto: CreateProductDto, adminId: string) {
     const {
       tempMainImageId,
       tempGalleryImageIds,
@@ -184,8 +196,6 @@ export class ProductsService extends SluggableService<
       features,
       ...productData
     } = dto;
-
-    console.log('DTO recibido en el servicio:', dto);
     // Paso 1: valida todas las imágenes antes de tocar la BD
     const [mainTempRecord, galleryTempRecords] = await Promise.all([
       tempMainImageId !== undefined
@@ -207,12 +217,6 @@ export class ProductsService extends SluggableService<
           )
         : Promise.resolve(null),
     ]);
-
-    console.log(
-      'Registros temporales encontrados:',
-      mainTempRecord,
-      galleryTempRecords,
-    );
 
     // Paso 2: mueve todos los archivos al disco (sin tocar BD)
     const movedList: MovedImageData[] = [];
@@ -241,9 +245,7 @@ export class ProductsService extends SluggableService<
           movedList.push(moved);
         }
       }
-      console.log('Archivos movidos al disco:', movedList);
     } catch (error) {
-      console.log('Error al mover archivos al disco:', error);
       // Algún moveToFinal falló → revierte los archivos ya movidos
       await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
       throw error;
@@ -257,7 +259,6 @@ export class ProductsService extends SluggableService<
           undefined,
           tx,
         );
-        console.log('Slug generado en productos:', slug);
 
         const dataToCreate: CreateProductDto = { ...productData };
         if (dataToCreate.isFeatured === null) delete dataToCreate.isFeatured;
@@ -265,11 +266,15 @@ export class ProductsService extends SluggableService<
         if (dataToCreate.stock === null) delete dataToCreate.stock;
 
         const created = await this.create(
-          { ...dataToCreate, slug } as CreateProductDto,
+          {
+            ...dataToCreate,
+            slug,
+            createdById: adminId,
+            updatedById: adminId,
+          } as CreateProductDto,
           undefined,
           tx,
         );
-        console.log('Producto creado en BD:', created);
 
         await Promise.all([
           price !== undefined
@@ -294,8 +299,6 @@ export class ProductsService extends SluggableService<
           ),
         ]);
 
-        console.log('Producto creado:', created);
-
         return created;
       });
 
@@ -319,7 +322,7 @@ export class ProductsService extends SluggableService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async updateProduct(id: string, dto: UpdateProductDto) {
+  async updateProduct(id: string, dto: UpdateProductDto, adminId: string) {
     const {
       tempMainImageId,
       tempGalleryImageIds,
@@ -397,12 +400,19 @@ export class ProductsService extends SluggableService<
     // Paso 3: BD atómica — update producto + datos + imágenes
     try {
       await this.prisma.$transaction(async (tx) => {
-        const dataToUpdate: UpdateProductDto = { ...productData };
+        const dataToUpdate: UpdateProductDto = {
+          ...productData,
+        };
         if (dataToUpdate.isFeatured === null) delete dataToUpdate.isFeatured;
         if (dataToUpdate.status === null) delete dataToUpdate.status;
         if (dataToUpdate.stock === null) delete dataToUpdate.stock;
 
-        await this.updateWithSlug(id, dataToUpdate, undefined, tx);
+        await this.updateWithSlug(
+          id,
+          { ...dataToUpdate, updatedById: adminId } as UpdateProductDto,
+          undefined,
+          tx,
+        );
 
         await Promise.all([
           // Precio
@@ -450,7 +460,7 @@ export class ProductsService extends SluggableService<
    * @param ids Arreglo de UUIDs de los productos.
    * @param status Nuevo estado (active, draft, inactive, out_of_stock).
    */
-  async changeStatusMany(ids: string[], status: string) {
+  async changeStatusMany(ids: string[], status: string, adminId: string) {
     // Usamos el helper getModel() heredado de BaseService
     return this.getModel().updateMany({
       where: {
@@ -460,6 +470,7 @@ export class ProductsService extends SluggableService<
       },
       data: {
         status,
+        updatedById: adminId,
       },
     });
   }
@@ -490,34 +501,34 @@ export class ProductsService extends SluggableService<
   // softDeleteProduct
   // ═══════════════════════════════════════════════
 
-  async softDeleteProduct(id: string) {
+  async softDeleteProduct(id: string, adminId: string) {
     await this.checkRelations(id, RELATION_CHECKS);
-    return this.softDelete(id);
+    return this.softDelete(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // softDeleteManyProducts
   // ═══════════════════════════════════════════════
 
-  async softDeleteManyProducts(ids: string[]) {
+  async softDeleteManyProducts(ids: string[], adminId: string) {
     await this.checkRelationsMany(ids, RELATION_CHECKS);
-    return this.softDeleteMany(ids);
+    return this.softDeleteMany(ids, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreProduct
   // ═══════════════════════════════════════════════
 
-  async restoreProduct(id: string) {
+  async restoreProduct(id: string, adminId: string) {
     await this.assertNotDeleted(id);
-    return this.restore(id);
+    return this.restore(id, adminId);
   }
 
   // ═══════════════════════════════════════════════
   // restoreManyProducts
   // ═══════════════════════════════════════════════
 
-  async restoreManyProducts(ids: string[]) {
-    return this.restoreMany(ids);
+  async restoreManyProducts(ids: string[], adminId: string) {
+    return this.restoreMany(ids, adminId);
   }
 }

@@ -213,7 +213,6 @@ export abstract class BaseService<
       onlyTrash = false,
     } = params;
 
-    console.log('Onlytrash en findAll:', onlyTrash);
     const page = pagination?.page ?? 1;
     const limit = pagination?.limit ?? 20;
 
@@ -293,12 +292,6 @@ export abstract class BaseService<
     include?: object,
     client?: PrismaDatabaseClient,
   ): Promise<T> {
-    console.log(
-      'Creando nuevo registro en',
-      this.modelName,
-      'con datos:',
-      data,
-    );
     return this.getModel(client).create({ data, include }) as Promise<T>;
   }
 
@@ -342,11 +335,15 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   // softDelete
   // ═══════════════════════════════════════════════
-  async softDelete(id: string, client?: PrismaDatabaseClient): Promise<T> {
+  async softDelete(
+    id: string,
+    adminId: string,
+    client?: PrismaDatabaseClient,
+  ): Promise<T> {
     await this.assertExists(id, false, client);
     return this.getModel(client).update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), deletedById: adminId },
     }) as Promise<T>;
   }
 
@@ -355,22 +352,32 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   async softDeleteMany(
     ids: string[],
+    adminId: string,
     client?: PrismaDatabaseClient,
   ): Promise<BatchResult> {
     return this.getModel(client).updateMany({
       where: { id: { in: ids } },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), deletedById: adminId },
     }) as Promise<BatchResult>;
   }
 
   // ═══════════════════════════════════════════════
   // restore
   // ═══════════════════════════════════════════════
-  async restore(id: string, client?: PrismaDatabaseClient): Promise<T> {
+  async restore(
+    id: string,
+    adminId: string,
+    client?: PrismaDatabaseClient,
+  ): Promise<T> {
     await this.assertExists(id, true, client);
     return this.getModel(client).update({
       where: { id },
-      data: { deletedAt: null },
+      data: {
+        deletedAt: null,
+        deletedById: null,
+        updatedAt: new Date(),
+        updatedById: adminId,
+      },
     }) as Promise<T>;
   }
 
@@ -379,11 +386,17 @@ export abstract class BaseService<
   // ═══════════════════════════════════════════════
   async restoreMany(
     ids: string[],
+    adminId: string,
     client?: PrismaDatabaseClient,
   ): Promise<BatchResult> {
     return this.getModel(client).updateMany({
       where: { id: { in: ids } },
-      data: { deletedAt: null },
+      data: {
+        deletedAt: null,
+        deletedById: null,
+        updatedAt: new Date(),
+        updatedById: adminId,
+      },
     }) as Promise<BatchResult>;
   }
 }

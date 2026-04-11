@@ -31,6 +31,8 @@ import {
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
+import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import { CurrentUser } from 'src/modules/auth/decorators/current-user.decorator';
 
 @ApiTags('Brands')
 @Controller('brands')
@@ -46,8 +48,11 @@ export class BrandsController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Marcas eliminadas (soft) exitosamente')
   @ApiOperation({ summary: 'Soft-delete múltiples marcas' })
-  softDeleteMany(@Body() dto: BulkSoftDeleteBrandDto) {
-    return this.brandsService.softDeleteManyBrands(dto.ids);
+  softDeleteMany(
+    @Body() dto: BulkSoftDeleteBrandDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.brandsService.softDeleteManyBrands(dto.ids, admin.sub);
   }
 
   @Patch('bulk/restore')
@@ -55,8 +60,11 @@ export class BrandsController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Marcas restauradas exitosamente')
   @ApiOperation({ summary: 'Restaurar múltiples marcas' })
-  restoreMany(@Body() dto: BulkRestoreBrandDto) {
-    return this.brandsService.restoreManyBrands(dto.ids);
+  restoreMany(
+    @Body() dto: BulkRestoreBrandDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.brandsService.restoreManyBrands(dto.ids, admin.sub);
   }
 
   @Delete('bulk')
@@ -94,8 +102,9 @@ export class BrandsController {
   @ResponseMessage('Marca creada exitosamente')
   @ApiOperation({ summary: 'Crear marca' })
   @ApiCreatedResponse({ description: 'Marca creada' })
-  create(@Body() dto: CreateBrandDto) {
-    return this.brandsService.createBrand(dto);
+  create(@Body() dto: CreateBrandDto, @CurrentUser() admin: AdminJwtPayload) {
+    console.log('admin', admin);
+    return this.brandsService.createBrand(dto, admin.sub);
   }
 
   // ═══════════════════════════════════════════════
@@ -138,8 +147,12 @@ export class BrandsController {
   @ResponseMessage('Marca actualizada exitosamente')
   @ApiOperation({ summary: 'Actualizar marca' })
   @ApiParam({ name: 'id', description: 'UUID de la marca' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateBrandDto) {
-    return this.brandsService.updateBrand(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBrandDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.brandsService.updateBrand(id, dto, admin.sub);
   }
 
   @Patch(':id/soft-delete')
@@ -148,8 +161,11 @@ export class BrandsController {
   @ResponseMessage('Marca eliminada exitosamente')
   @ApiOperation({ summary: 'Soft-delete de marca' })
   @ApiParam({ name: 'id', description: 'UUID de la marca' })
-  softDelete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.brandsService.softDeleteBrand(id);
+  softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.brandsService.softDeleteBrand(id, admin.sub);
   }
 
   @Patch(':id/restore')
@@ -158,8 +174,11 @@ export class BrandsController {
   @ResponseMessage('Marca restaurada exitosamente')
   @ApiOperation({ summary: 'Restaurar marca eliminada' })
   @ApiParam({ name: 'id', description: 'UUID de la marca' })
-  restore(@Param('id', ParseUUIDPipe) id: string) {
-    return this.brandsService.restoreBrand(id);
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.brandsService.restoreBrand(id, admin.sub);
   }
 
   @Delete(':id')
