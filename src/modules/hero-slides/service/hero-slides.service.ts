@@ -14,13 +14,16 @@ import {
   CreateHeroSlideDto,
   UpdateHeroSlideDto,
   QueryHeroSlideDto,
-  ReorderHeroSlidesDto,
 } from '../dto';
+import { BulkReorderHeroSlidesDto } from '../dto/bulk-hero.dto';
 
 type HeroSlideEntity = Prisma.HeroSlideGetPayload<{
   include: {
     linkProduct: { select: { id: true; name: true; slug: true } };
     linkCategory: { select: { id: true; name: true; slug: true } };
+    createdBy: { select: { id: true; name: true; email: true } };
+    updatedBy: { select: { id: true; name: true; email: true } };
+    deletedBy: { select: { id: true; name: true; email: true } };
   };
 }>;
 
@@ -28,9 +31,17 @@ const ENTITY_TYPE = ImageEntityType.HERO_SLIDE;
 const ROLE_DESKTOP = 'desktop';
 const ROLE_MOBILE = 'mobile';
 
-const SLIDE_INCLUDE = {
+const LIST_INCLUDE = {
   linkProduct: { select: { id: true, name: true, slug: true } },
   linkCategory: { select: { id: true, name: true, slug: true } },
+  createdBy: { select: { id: true, name: true, email: true } },
+  updatedBy: { select: { id: true, name: true, email: true } },
+} as const;
+
+const TRASH_INCLUDE = {
+  linkProduct: { select: { id: true, name: true, slug: true } },
+  linkCategory: { select: { id: true, name: true, slug: true } },
+  deletedBy: { select: { id: true, name: true, email: true } },
 } as const;
 
 @Injectable()
@@ -41,7 +52,8 @@ export class HeroSlidesService extends BaseService<
   Prisma.HeroSlideWhereInput,
   Prisma.HeroSlideOrderByWithRelationInput
 > {
-  protected override useSoftDelete = false;
+  protected override useSoftDelete = true;
+  protected override nameField = 'title';
 
   constructor(
     prisma: PrismaService,
@@ -55,13 +67,22 @@ export class HeroSlidesService extends BaseService<
   // ═══════════════════════════════════════════════
 
   async findAllHeroSlides(query: QueryHeroSlideDto) {
-    const { isActive, page, limit } = query;
-
+    const { isActive, linkType, search, page, limit, onlyTrash } = query;
     const result = await this.findAll({
-      where: { ...(isActive !== undefined && { isActive }) },
+      where: {
+        ...(isActive !== undefined && { isActive }),
+        ...(linkType !== undefined && { linkType }),
+        ...(search !== undefined && {
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { subtitle: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      include: SLIDE_INCLUDE,
+      include: onlyTrash ? TRASH_INCLUDE : LIST_INCLUDE,
       pagination: { page, limit },
+      onlyTrash,
     });
 
     return {
@@ -74,20 +95,32 @@ export class HeroSlidesService extends BaseService<
   // findAllPublic
   // ═══════════════════════════════════════════════
 
-  async findAllPublic() {
+  async findAllPublic(query: QueryHeroSlideDto) {
+    const { search, page, limit } = query;
     const now = new Date();
 
-    const slides = await this.prisma.heroSlide.findMany({
+    const result = await this.findAll({
       where: {
         isActive: true,
         OR: [{ startsAt: null }, { startsAt: { lte: now } }],
         AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+        deletedAt: null,
+        ...(search !== undefined && {
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { subtitle: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
       },
-      orderBy: { sortOrder: 'asc' },
-      include: SLIDE_INCLUDE,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      include: LIST_INCLUDE,
+      pagination: { page, limit },
     });
 
-    return this.imageRecord.attachImagesToMany(slides, ENTITY_TYPE);
+    return {
+      ...result,
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+    };
   }
 
   // ═══════════════════════════════════════════════
@@ -95,7 +128,7 @@ export class HeroSlidesService extends BaseService<
   // ═══════════════════════════════════════════════
 
   async findHeroSlideById(id: string) {
-    const slide = await this.findOne(id, SLIDE_INCLUDE);
+    const slide = await this.findOne(id, LIST_INCLUDE);
     return this.imageRecord.attachImagesToEntity(slide, ENTITY_TYPE);
   }
 
@@ -111,7 +144,7 @@ export class HeroSlidesService extends BaseService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async createHeroSlide(dto: CreateHeroSlideDto) {
+  async createHeroSlide(dto: CreateHeroSlideDto, adminId: string) {
     const { tempDesktopImageId, tempMobileImageId, ...slideData } = dto;
 
     this.validateLinkData(slideData);
@@ -165,19 +198,42 @@ export class HeroSlidesService extends BaseService<
     // Paso 3: BD atómica — crea slide + confirma imágenes
     try {
       const slide = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.heroSlide.create({
-          data: {
-            ...slideData,
-            startsAt:
-              slideData.startsAt !== undefined
-                ? new Date(slideData.startsAt)
-                : null,
-            endsAt:
-              slideData.endsAt !== undefined
-                ? new Date(slideData.endsAt)
-                : null,
-          },
-        });
+        //const dataToCreate: CreateHeroSlideDto = { ...slideData };
+
+        // if (dataToCreate.startsAt !== undefined) {
+        //   dataToCreate.startsAt = new Date(dataToCreate.startsAt);
+        // }
+        // if (dataToCreate.endsAt !== undefined) {
+        //   dataToCreate.endsAt = new Date(dataToCreate.endsAt);
+        // }
+
+        const created = await this.create(
+          {
+            title: slideData.title,
+            subtitle: slideData.subtitle,
+            linkType: slideData.linkType ?? 'none',
+            linkUrl:
+              slideData.linkType === 'external' ? slideData.linkUrl : null,
+            linkText: slideData.linkType !== 'none' ? slideData.linkText : null,
+            sortOrder: slideData.sortOrder ?? 0,
+            isActive: slideData.isActive ?? true,
+            startsAt: slideData.startsAt ? new Date(slideData.startsAt) : null,
+            endsAt: slideData.endsAt ? new Date(slideData.endsAt) : null,
+            createdBy: { connect: { id: adminId } },
+            updatedBy: { connect: { id: adminId } },
+            // Relaciones con connect
+            ...(slideData.linkType === 'product' &&
+              slideData.linkProductId && {
+                linkProduct: { connect: { id: slideData.linkProductId } },
+              }),
+            ...(slideData.linkType === 'category' &&
+              slideData.linkCategoryId && {
+                linkCategory: { connect: { id: slideData.linkCategoryId } },
+              }),
+          } as CreateHeroSlideDto,
+          undefined,
+          tx,
+        );
 
         await Promise.all(
           movedList.map((moved) =>
@@ -210,13 +266,19 @@ export class HeroSlidesService extends BaseService<
   //          Si falla: deleteFiles revierte el disco, BD sin cambios
   // ═══════════════════════════════════════════════
 
-  async updateHeroSlide(id: string, dto: UpdateHeroSlideDto) {
-    const { tempDesktopImageId, tempMobileImageId, ...slideData } = dto;
+  async updateHeroSlide(id: string, dto: UpdateHeroSlideDto, adminId: string) {
+    const {
+      tempDesktopImageId,
+      tempMobileImageId,
+      removedDesktopImageId,
+      removedMobileImageId,
+      ...slideData
+    } = dto;
 
     this.validateLinkData(slideData);
     await this.assertExists(id);
 
-    // Paso 1: valida todas las imágenes antes de tocar la BD
+    // Paso 1: valida imágenes nuevas antes de tocar la BD
     const [desktopTempRecord, mobileTempRecord] = await Promise.all([
       tempDesktopImageId !== undefined
         ? this.imageRecord.findTempRecord(
@@ -265,24 +327,44 @@ export class HeroSlidesService extends BaseService<
     // Paso 3: BD atómica — update slide + confirma imágenes
     try {
       await this.prisma.$transaction(async (tx) => {
-        await tx.heroSlide.update({
-          where: { id },
-          data: {
-            ...slideData,
-            ...(slideData.startsAt !== undefined && {
-              startsAt: slideData.startsAt
-                ? new Date(slideData.startsAt)
-                : null,
-            }),
-            ...(slideData.endsAt !== undefined && {
-              endsAt: slideData.endsAt ? new Date(slideData.endsAt) : null,
-            }),
-          },
-        });
-
-        await Promise.all(
-          movedList.map((moved) => this.imageRecord.confirmInDb(moved, tx)),
+        await this.update(
+          id,
+          {
+            title: slideData.title,
+            subtitle: slideData.subtitle,
+            linkType: slideData.linkType ?? 'none',
+            linkUrl:
+              slideData.linkType === 'external' ? slideData.linkUrl : null,
+            linkText: slideData.linkType !== 'none' ? slideData.linkText : null,
+            sortOrder: slideData.sortOrder,
+            isActive: slideData.isActive,
+            startsAt: slideData.startsAt ? new Date(slideData.startsAt) : null,
+            endsAt: slideData.endsAt ? new Date(slideData.endsAt) : null,
+            updatedBy: { connect: { id: adminId } },
+            linkProduct:
+              slideData.linkType === 'product' && slideData.linkProductId
+                ? { connect: { id: slideData.linkProductId } }
+                : { disconnect: true },
+            linkCategory:
+              slideData.linkType === 'category' && slideData.linkCategoryId
+                ? { connect: { id: slideData.linkCategoryId } }
+                : { disconnect: true },
+          } as UpdateHeroSlideDto,
+          undefined,
+          tx,
         );
+
+        await Promise.all([
+          !desktopTempRecord && removedDesktopImageId
+            ? this.imageRecord.deleteImageById(removedDesktopImageId, tx)
+            : Promise.resolve(),
+
+          !mobileTempRecord && removedMobileImageId
+            ? this.imageRecord.deleteImageById(removedMobileImageId, tx)
+            : Promise.resolve(),
+
+          ...movedList.map((moved) => this.imageRecord.confirmInDb(moved, tx)),
+        ]);
       });
     } catch (error) {
       await this.imageRecord.deleteFiles(movedList.map((m) => m.finalPath));
@@ -297,9 +379,8 @@ export class HeroSlidesService extends BaseService<
   // ═══════════════════════════════════════════════
 
   async removeHeroSlide(id: string) {
-    await this.assertExists(id);
     await this.imageRecord.deleteEntityImages(ENTITY_TYPE, id);
-    return this.prisma.heroSlide.delete({ where: { id } });
+    return this.remove(id);
   }
 
   // ═══════════════════════════════════════════════
@@ -310,24 +391,64 @@ export class HeroSlidesService extends BaseService<
     await Promise.all(
       ids.map((id) => this.imageRecord.deleteEntityImages(ENTITY_TYPE, id)),
     );
-    return this.prisma.heroSlide.deleteMany({ where: { id: { in: ids } } });
+    return this.removeMany(ids);
   }
 
   // ═══════════════════════════════════════════════
   // reorder
   // ═══════════════════════════════════════════════
 
-  async reorder(dto: ReorderHeroSlidesDto) {
+  async reorder(dto: BulkReorderHeroSlidesDto, adminId: string) {
     await this.prisma.$transaction(
       dto.ids.map((id, index) =>
         this.prisma.heroSlide.update({
           where: { id },
-          data: { sortOrder: index },
+          data: { sortOrder: index, updatedById: adminId },
         }),
       ),
     );
 
-    return this.findAllPublic();
+    // Retorna solo los slides reordenados sin paginación
+    const slides = await this.prisma.heroSlide.findMany({
+      where: { id: { in: dto.ids }, deletedAt: null },
+      include: LIST_INCLUDE,
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return this.imageRecord.attachImagesToMany(slides, ENTITY_TYPE);
+  }
+
+  // ═══════════════════════════════════════════════
+  // softDeleteProduct
+  // ═══════════════════════════════════════════════
+
+  async softDeleteHeroSlide(id: string, adminId: string) {
+    return this.softDelete(id, adminId);
+  }
+
+  // ═══════════════════════════════════════════════
+  // softDeleteManyProducts
+  // ═══════════════════════════════════════════════
+
+  async softDeleteManyHeroSlides(ids: string[], adminId: string) {
+    return this.softDeleteMany(ids, adminId);
+  }
+
+  // ═══════════════════════════════════════════════
+  // restoreProduct
+  // ═══════════════════════════════════════════════
+
+  async restoreHeroSlide(id: string, adminId: string) {
+    await this.assertNotDeleted(id);
+    return this.restore(id, adminId);
+  }
+
+  // ═══════════════════════════════════════════════
+  // restoreManyProducts
+  // ═══════════════════════════════════════════════
+
+  async restoreManyHeroSlides(ids: string[], adminId: string) {
+    return this.restoreMany(ids, adminId);
   }
 
   // ═══════════════════════════════════════════════
@@ -359,17 +480,17 @@ export class HeroSlidesService extends BaseService<
   ): void {
     if (data.linkType === LinkType.product && !data.linkProductId) {
       throw new BadRequestException(
-        'linkProductId es requerido cuando linkType es "product"',
+        'El producto es requerido cuando el tipo de enlace es "producto"',
       );
     }
     if (data.linkType === LinkType.category && !data.linkCategoryId) {
       throw new BadRequestException(
-        'linkCategoryId es requerido cuando linkType es "category"',
+        'La categoría es requerida cuando el tipo de enlace es "categoría"',
       );
     }
     if (data.linkType === LinkType.external && !data.linkUrl) {
       throw new BadRequestException(
-        'linkUrl es requerido cuando linkType es "external"',
+        'La URL externa es requerida cuando el tipo de enlace es "externo"',
       );
     }
   }

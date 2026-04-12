@@ -64,12 +64,12 @@ export class CreateHeroSlideDto {
   @ApiPropertyOptional({ example: '2026-01-01T00:00:00.000Z' })
   @IsOptional()
   @IsISO8601()
-  startsAt?: string;
+  startsAt?: string | Date;
 
   @ApiPropertyOptional({ example: '2026-12-31T23:59:59.000Z' })
   @IsOptional()
   @IsISO8601()
-  endsAt?: string;
+  endsAt?: string | Date;
 
   @ApiPropertyOptional({ example: 'uuid-temporal-desktop' })
   @IsOptional()

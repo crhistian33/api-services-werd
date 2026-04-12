@@ -1,4 +1,8 @@
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PrismaClient } from 'generated/prisma/client';
 import { PrismaModelDelegate } from '../interfaces/prisma-delegate.interface';
@@ -225,6 +229,7 @@ export abstract class BaseService<
         sfFilter = { deletedAt: null }; // 💡 Fuerza ver solo activos
       }
     }
+
     // Filtro dinámico: usa el helper que ya tienes para decidir qué traer
     const mergedWhere = {
       ...sfFilter,
@@ -232,7 +237,7 @@ export abstract class BaseService<
     };
 
     // ── Ejecución en Paralelo (Carga Rápida) ──────────────────────────────────
-    const [data, total, trashedCount] = await Promise.all([
+    const [data, total] = await Promise.all([
       this.getModel().findMany({
         where: mergedWhere,
         orderBy,
@@ -243,20 +248,12 @@ export abstract class BaseService<
       }) as Promise<T[]>,
 
       this.getModel().count({ where: mergedWhere }),
-
-      // Conteo de basura: se ejecuta al mismo tiempo que los datos
-      this.useSoftDelete
-        ? this.getModel().count({
-            where: { deletedAt: { not: null } },
-          })
-        : Promise.resolve(0),
     ]);
 
     return {
       data,
       meta: {
         ...this.buildPaginationMeta(total, page, limit),
-        ...(this.useSoftDelete ? { trashedCount } : {}),
       },
     };
   }
@@ -398,5 +395,36 @@ export abstract class BaseService<
         updatedById: adminId,
       },
     }) as Promise<BatchResult>;
+  }
+
+  // ── assertNotDeleted — lanza error si el registro NO está eliminado ─────────
+  async assertNotDeleted(id: string, friendlyName?: string): Promise<void> {
+    const record = (await this.getModel().findUnique({
+      where: { id },
+      select: {
+        id: true,
+        deletedAt: true,
+        [this.nameField]: true,
+      },
+    })) as {
+      id: string;
+      [key: string]: unknown;
+      deletedAt: Date | null;
+    } | null;
+
+    if (!record) {
+      throw new NotFoundException(
+        `${this.modelName} con id "${id}" no encontrado`,
+      );
+    }
+
+    if (!record.deletedAt) {
+      const label = (friendlyName ??
+        (record as Record<string, unknown>)[this.nameField] ??
+        id) as string;
+      throw new BadRequestException(
+        `"${label}" no está eliminado, no se puede restaurar`,
+      );
+    }
   }
 }

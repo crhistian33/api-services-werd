@@ -261,7 +261,6 @@ export class AdminAuthService {
   }
 
   private setRefreshCookie(res: Response, token: string) {
-    console.log('Enviando cookie al cliente...');
     res.cookie(REFRESH_COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

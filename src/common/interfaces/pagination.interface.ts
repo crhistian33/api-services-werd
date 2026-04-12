@@ -5,7 +5,6 @@ export interface PaginationMeta {
   page: number;
   limit: number;
   totalPages: number;
-  trashedCount?: number;
 }
 
 export interface PaginatedResult<T> {

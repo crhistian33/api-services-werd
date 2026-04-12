@@ -43,7 +43,7 @@ export const VARIANT_CONFIGS: Record<
     original: null,
     //large: 1200, // banner hero de la página de categoría
     medium: 600, // cards "Compra por categoría" en homepage
-    //thumb: 300, // menú de navegación con imagen, widget lateral
+    thumb: 120, // menú de navegación con imagen, widget lateral
   },
 
   // ── BRAND ─────────────────────────────────────────────────
@@ -69,12 +69,14 @@ export const VARIANT_CONFIGS: Record<
     original: null,
     large: 1440, // fullscreen desktop
     medium: 768, // tablet landscape
+    thumb: 120, // miniaturas galería en PDP
   },
 
   hero_slide_mobile: {
     original: null,
     large: 600, // mobile portrait full
     medium: 480, // mobile pequeño / conexión lenta
+    thumb: 120, // miniaturas galería en PDP
   },
 
   // ── USER ──────────────────────────────────────────────────

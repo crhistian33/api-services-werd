@@ -145,35 +145,4 @@ export abstract class SluggableService<
       client,
     );
   }
-
-  // ── assertNotDeleted — lanza error si el registro NO está eliminado ─────────
-  async assertNotDeleted(id: string, friendlyName?: string): Promise<void> {
-    const record = (await this.getModel().findUnique({
-      where: { id },
-      select: {
-        id: true,
-        deletedAt: true,
-        [this.nameField]: true,
-      },
-    })) as {
-      id: string;
-      [key: string]: unknown;
-      deletedAt: Date | null;
-    } | null;
-
-    if (!record) {
-      throw new NotFoundException(
-        `${this.modelName} con id "${id}" no encontrado`,
-      );
-    }
-
-    if (!record.deletedAt) {
-      const label = (friendlyName ??
-        (record as Record<string, unknown>)[this.nameField] ??
-        id) as string;
-      throw new BadRequestException(
-        `"${label}" no está eliminado, no se puede restaurar`,
-      );
-    }
-  }
 }

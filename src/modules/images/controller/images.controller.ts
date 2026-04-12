@@ -63,7 +63,7 @@ export class ImagesController {
     if (!file) throw new BadRequestException('No se recibió ningún archivo');
 
     const config = IMAGE_CONFIGS[entityKey];
-    console.log('Config obtenida para', entityKey, ':', config);
+
     if (!config) {
       throw new BadRequestException(
         `Entidad "${entityKey}" no soporta imágenes`,

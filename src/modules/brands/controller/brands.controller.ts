@@ -103,7 +103,6 @@ export class BrandsController {
   @ApiOperation({ summary: 'Crear marca' })
   @ApiCreatedResponse({ description: 'Marca creada' })
   create(@Body() dto: CreateBrandDto, @CurrentUser() admin: AdminJwtPayload) {
-    console.log('admin', admin);
     return this.brandsService.createBrand(dto, admin.sub);
   }
 
