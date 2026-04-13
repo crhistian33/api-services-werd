@@ -15,6 +15,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PagesModule } from './modules/pages/pages.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { jwtConfig } from './config/jwt.config';
+import { FaqsModule } from './modules/faqs/faqs.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { jwtConfig } from './config/jwt.config';
     HeroSlidesModule,
     PagesModule,
     AuthModule,
+    FaqsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -968,6 +968,10 @@ model AdminUser {
   complaintsManaged  Complaint[] @relation("ComplaintManagedBy")
   complaintsResolved Complaint[] @relation("ComplaintResolvedBy")
 
+  // ── FAQ ──────────────────────────────────────────────────
+  faqsCreated Faq[] @relation("FaqCreatedBy")
+faqsUpdated Faq[] @relation("FaqUpdatedBy")
+
   @@index([email])
   @@map("admin_users")
 }
@@ -989,4 +993,28 @@ model AdminRefreshToken {
   @@index([adminUserId])
   @@index([tokenHash])
   @@map("admin_refresh_tokens")
+}
+
+// =============================================================
+// FAQ
+// =============================================================
+
+model Faq {
+  id        String   @id @default(uuid())
+  question  String
+  answer    String   // HTML richtext
+  category  String?  // 'envios' | 'pagos' | 'devoluciones' | 'general'
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdById String?
+  updatedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy AdminUser? @relation("FaqCreatedBy", fields: [createdById], references: [id])
+  updatedBy AdminUser? @relation("FaqUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([isActive, sortOrder])
+  @@index([category])
+  @@map("faqs")
 }
