@@ -15,6 +15,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiOkResponse,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { SiteConfigService } from '../service/site-config.service';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
@@ -24,6 +25,9 @@ import {
   UpdateSiteConfigDto,
   UpdateSocialLinkDto,
 } from '../dto';
+import { Roles } from '../../../modules/auth/decorators/roles.decorator';
+import { AdminRole } from '../../../modules/auth/constants/admin-role.constant';
+import { Public } from '../../../common/decorators/public.decorator';
 
 @ApiTags('Site Config')
 @Controller('site-config')
@@ -32,14 +36,7 @@ export class SiteConfigController {
 
   // ── SiteConfig ────────────────────────────────
 
-  @Get()
-  @ResponseMessage('Configuración obtenida exitosamente')
-  @ApiOperation({ summary: 'Obtener configuración del sitio (admin)' })
-  @ApiOkResponse({ description: 'Configuración completa con redes sociales' })
-  get() {
-    return this.siteConfigService.get();
-  }
-
+  @Public()
   @Get('public')
   @ResponseMessage('Configuración obtenida exitosamente')
   @ApiOperation({ summary: 'Obtener configuración pública (Astro)' })
@@ -48,16 +45,36 @@ export class SiteConfigController {
     return this.siteConfigService.getPublic();
   }
 
+  @Get()
+  @Roles(
+    AdminRole.ADMIN,
+    AdminRole.SUPER_ADMIN,
+    AdminRole.EDITOR,
+    AdminRole.VIEWER,
+  )
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Configuración obtenida exitosamente')
+  @ApiOperation({ summary: 'Obtener configuración del sitio (admin)' })
+  @ApiOkResponse({ description: 'Configuración completa con redes sociales' })
+  get() {
+    return this.siteConfigService.get();
+  }
+
   @Patch()
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Configuración actualizada exitosamente')
   @ApiOperation({ summary: 'Actualizar configuración del sitio' })
   update(@Body() dto: UpdateSiteConfigDto) {
+    console.log('DTO', dto);
     return this.siteConfigService.update(dto);
   }
 
   // ── Social links ──────────────────────────────
 
   @Post('social-links')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Red social creada exitosamente')
   @ApiOperation({ summary: 'Agregar red social' })
   createSocialLink(@Body() dto: CreateSocialLinkDto) {
@@ -65,9 +82,12 @@ export class SiteConfigController {
   }
 
   @Patch('social-links/reorder')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
   @ResponseMessage('Redes sociales reordenadas exitosamente')
   @ApiOperation({ summary: 'Reordenar redes sociales' })
   reorderSocialLinks(@Body() dto: ReorderSocialLinksDto) {
+    console.log('DTO', dto);
     return this.siteConfigService.reorderSocialLinks(dto.ids);
   }
 

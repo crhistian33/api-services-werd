@@ -7,6 +7,7 @@ import {
   IsUUID,
   ValidateNested,
   IsArray,
+  IsNumber,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateSocialLinkDto } from './create-social-link.dto';
@@ -68,6 +69,17 @@ export class UpdateSiteConfigDto {
   @IsString()
   @MaxLength(500)
   metaDescription?: string;
+
+  @ApiPropertyOptional({ example: 'PEN' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(3)
+  currency?: string;
+
+  @ApiPropertyOptional({ example: 18 })
+  @IsOptional()
+  @IsNumber()
+  taxRate?: number;
 
   @ApiPropertyOptional({ example: 'G-XXXXXXXXXX' })
   @IsOptional()
