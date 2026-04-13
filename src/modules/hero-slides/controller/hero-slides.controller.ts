@@ -30,6 +30,7 @@ import { Public } from '../../../common/decorators/public.decorator';
 import { Roles } from '../../../modules/auth/decorators/roles.decorator';
 import { AdminRole } from '../../../modules/auth/constants/admin-role.constant';
 import {
+  BulkDeleteHeroSlideDto,
   BulkReorderHeroSlidesDto,
   BulkRestoreHeroSlideDto,
   BulkSoftDeleteHeroSlideDto,
@@ -101,7 +102,7 @@ export class HeroSlidesController {
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Slides eliminados exitosamente')
   @ApiOperation({ summary: 'Eliminar múltiples slides' })
-  removeMany(@Body() dto: { ids: string[] }) {
+  removeMany(@Body() dto: BulkDeleteHeroSlideDto) {
     return this.heroSlidesService.removeManyHeroSlides(dto.ids);
   }
 

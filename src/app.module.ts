@@ -16,6 +16,7 @@ import { PagesModule } from './modules/pages/pages.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { jwtConfig } from './config/jwt.config';
 import { FaqsModule } from './modules/faqs/faqs.module';
+import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { FaqsModule } from './modules/faqs/faqs.module';
     PagesModule,
     AuthModule,
     FaqsModule,
+    PaymentMethodsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
