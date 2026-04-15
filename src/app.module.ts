@@ -17,6 +17,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { jwtConfig } from './config/jwt.config';
 import { FaqsModule } from './modules/faqs/faqs.module';
 import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
+import { ShippingZonesModule } from './modules/shipping-zones/shipping-zones.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.
     AuthModule,
     FaqsModule,
     PaymentMethodsModule,
+    ShippingZonesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
