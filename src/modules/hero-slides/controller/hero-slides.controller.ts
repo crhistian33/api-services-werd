@@ -24,17 +24,16 @@ import {
   CreateHeroSlideDto,
   UpdateHeroSlideDto,
   QueryHeroSlideDto,
+  BulkChangeStatusHeroSlideDto,
+  BulkDeleteHeroSlideDto,
+  BulkReorderHeroSlidesDto,
+  BulkRestoreHeroSlideDto,
+  BulkSoftDeleteHeroSlideDto,
 } from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { Public } from '../../../common/decorators/public.decorator';
 import { Roles } from '../../../modules/auth/decorators/roles.decorator';
 import { AdminRole } from '../../../modules/auth/constants/admin-role.constant';
-import {
-  BulkDeleteHeroSlideDto,
-  BulkReorderHeroSlidesDto,
-  BulkRestoreHeroSlideDto,
-  BulkSoftDeleteHeroSlideDto,
-} from '../dto/bulk-hero.dto';
 import { CurrentUser } from '../../../modules/auth/decorators/current-user.decorator';
 import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 
@@ -61,6 +60,22 @@ export class HeroSlidesController {
   // ═══════════════════════════════════════════════
   // BULK (ANTES DE :id)
   // ═══════════════════════════════════════════════
+
+  @Patch('bulk-status')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Estados actualizados exitosamente')
+  @ApiOperation({ summary: 'Cambiar estado de múltiples categorías' })
+  changeStatus(
+    @Body() dto: BulkChangeStatusHeroSlideDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.heroSlidesService.changeStatusMany(
+      dto.ids,
+      dto.status,
+      admin.sub,
+    );
+  }
 
   @Patch('bulk/soft-delete')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)

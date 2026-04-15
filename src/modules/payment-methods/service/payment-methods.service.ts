@@ -71,13 +71,13 @@ export class PaymentMethodsService extends BaseService<
     } as UpdatePaymentMethodDto);
   }
 
-  async toggleActive(id: string) {
-    const method = await this.findOne(id);
-    return this.prisma.paymentMethod.update({
-      where: { id },
-      data: { isActive: !method.isActive },
-    });
-  }
+  // async toggleActive(id: string) {
+  //   const method = await this.findOne(id);
+  //   return this.prisma.paymentMethod.update({
+  //     where: { id },
+  //     data: { isActive: !method.isActive },
+  //   });
+  // }
 
   // Método específico para el Checkout del Cliente
   async findAllPublic() {
@@ -114,23 +114,5 @@ export class PaymentMethodsService extends BaseService<
     });
 
     return paymentMethods;
-  }
-
-  /**
-   * Actualiza el estado de múltiples métodos de pago a la vez.
-   * @param ids Arreglo de UUIDs de los métodos de pago.
-   * @param status Nuevo estado (active, draft, inactive, out_of_stock).
-   */
-  async changeStatusMany(ids: string[], status: boolean, adminId: string) {
-    // Usamos el helper getModel() heredado de BaseService
-    return this.getModel().updateMany({
-      where: {
-        id: { in: ids },
-      },
-      data: {
-        isActive: status,
-        updatedById: adminId,
-      },
-    });
   }
 }

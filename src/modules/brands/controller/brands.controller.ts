@@ -27,6 +27,7 @@ import {
   BulkDeleteBrandDto,
   BulkSoftDeleteBrandDto,
   BulkRestoreBrandDto,
+  BulkChangeStatusBrandDto,
 } from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -42,6 +43,18 @@ export class BrandsController {
   // ═══════════════════════════════════════════════
   // BULK (ANTES DE :id)
   // ═══════════════════════════════════════════════
+
+  @Patch('bulk-status')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Estados actualizados exitosamente')
+  @ApiOperation({ summary: 'Cambiar estado de múltiples categorías' })
+  changeStatus(
+    @Body() dto: BulkChangeStatusBrandDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.brandsService.changeStatusMany(dto.ids, dto.status, admin.sub);
+  }
 
   @Patch('bulk/soft-delete')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)

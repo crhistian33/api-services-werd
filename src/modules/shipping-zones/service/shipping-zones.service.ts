@@ -316,18 +316,6 @@ export class ShippingZonesService extends BaseService<
     return this.restoreMany(ids, adminId);
   }
 
-  async changeStatusMany(ids: string[], status: boolean, adminId: string) {
-    return this.getModel().updateMany({
-      where: {
-        id: { in: ids },
-      },
-      data: {
-        isActive: status,
-        updatedById: adminId,
-      },
-    });
-  }
-
   // ═══════════════════════════════════════════════
   // ── UBIGEO (solo lectura) ─────────────────────
   // ═══════════════════════════════════════════════

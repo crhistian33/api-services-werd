@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FaqsService } from '../service/faqs.service';
 import {
+  BulkChangeStatusFaqDto,
   BulkDeleteFaqDto,
   BulkReorderFaqsDto,
   CreateFaqDto,
@@ -32,6 +33,18 @@ export class FaqsController {
   // ═══════════════════════════════════════════════
   // BULK (ANTES DE :id)
   // ═══════════════════════════════════════════════
+
+  @Patch('bulk-status')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Estados actualizados exitosamente')
+  @ApiOperation({ summary: 'Cambiar estado de múltiples categorías' })
+  changeStatus(
+    @Body() dto: BulkChangeStatusFaqDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.faqsService.changeStatusMany(dto.ids, dto.status, admin.sub);
+  }
 
   @Patch('bulk/reorder')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)

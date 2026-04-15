@@ -427,4 +427,22 @@ export abstract class BaseService<
       );
     }
   }
+
+  /**
+   * Actualiza el estado de múltiples métodos de pago a la vez.
+   * @param ids Arreglo de UUIDs de los métodos de pago.
+   * @param status Nuevo estado (active, draft, inactive, out_of_stock).
+   */
+  async changeStatusMany(ids: string[], status: boolean, adminId: string) {
+    // Usamos el helper getModel() heredado de BaseService
+    return this.getModel().updateMany({
+      where: {
+        id: { in: ids },
+      },
+      data: {
+        isActive: status,
+        updatedById: adminId,
+      },
+    });
+  }
 }

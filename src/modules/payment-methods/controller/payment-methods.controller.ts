@@ -25,8 +25,8 @@ import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.int
 import {
   BulkDeletePaymentMethodDto,
   BulkReorderPaymentMethodDto,
-} from '../dto/bulk-payment-method.dto';
-import { BulkChangeStatusPaymentMethodDto } from '../dto/bulk-change-status.dto';
+  BulkChangeStatusPaymentMethodDto,
+} from '../dto';
 
 @ApiTags('PaymentMethods')
 @Controller('payment-methods')
@@ -113,13 +113,13 @@ export class PaymentMethodsController {
     return this.service.findOne(id);
   }
 
-  @Patch(':id/toggle-active')
-  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Estado de actividad cambiado')
-  toggleActive(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.toggleActive(id);
-  }
+  // @Patch(':id/toggle-active')
+  // @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  // @ApiBearerAuth('access-token')
+  // @ResponseMessage('Estado de actividad cambiado')
+  // toggleActive(@Param('id', ParseUUIDPipe) id: string) {
+  //   return this.service.toggleActive(id);
+  // }
 
   @Patch(':id')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)

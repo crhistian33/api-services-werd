@@ -460,7 +460,7 @@ export class ProductsService extends SluggableService<
    * @param ids Arreglo de UUIDs de los productos.
    * @param status Nuevo estado (active, draft, inactive, out_of_stock).
    */
-  async changeStatusMany(ids: string[], status: string, adminId: string) {
+  async changeStatusManyPro(ids: string[], status: string, adminId: string) {
     // Usamos el helper getModel() heredado de BaseService
     return this.getModel().updateMany({
       where: {

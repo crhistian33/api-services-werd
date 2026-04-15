@@ -9,7 +9,7 @@ export class BulkChangeStatusPageDto {
   @ArrayMinSize(1)
   ids: string[];
 
-  @ApiProperty({ enum: PageStatus })
+  @ApiProperty({ example: PageStatus.published })
   @IsEnum(PageStatus)
   status: PageStatus;
 }

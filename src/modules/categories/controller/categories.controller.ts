@@ -27,6 +27,7 @@ import {
   BulkDeleteCategoryDto,
   BulkSoftDeleteCategoryDto,
   BulkRestoreCategoryDto,
+  BulkChangeStatusCategoryDto,
 } from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -64,6 +65,22 @@ export class CategoriesController {
   // ═══════════════════════════════════════════════
   // BULK (ANTES DE :id)
   // ═══════════════════════════════════════════════
+
+  @Patch('bulk-status')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Estados actualizados exitosamente')
+  @ApiOperation({ summary: 'Cambiar estado de múltiples categorías' })
+  changeStatus(
+    @Body() dto: BulkChangeStatusCategoryDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.categoriesService.changeStatusMany(
+      dto.ids,
+      dto.status,
+      admin.sub,
+    );
+  }
 
   @Patch('bulk/soft-delete')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)

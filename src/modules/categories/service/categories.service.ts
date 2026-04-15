@@ -171,7 +171,7 @@ export class CategoriesService extends SluggableService<
           {
             ...categoryData,
             slug,
-            createdBy: adminId,
+            createdById: adminId,
             updatedById: adminId,
           } as CreateCategoryDto,
           undefined,

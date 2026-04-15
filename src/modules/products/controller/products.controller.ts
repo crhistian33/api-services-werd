@@ -86,7 +86,7 @@ export class ProductsController {
     @Body() dto: BulkChangeStatusProductDto,
     @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.productsService.changeStatusMany(
+    return this.productsService.changeStatusManyPro(
       dto.ids,
       dto.status,
       admin.sub,

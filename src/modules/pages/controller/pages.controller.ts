@@ -30,7 +30,6 @@ import {
 import { Roles } from '../../../modules/auth/decorators/roles.decorator';
 import { AdminRole } from '../../../modules/auth/constants/admin-role.constant';
 import { Public } from '../../../common/decorators/public.decorator';
-import { PageStatus } from 'generated/prisma/enums';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 
@@ -72,7 +71,11 @@ export class PagesController {
     @Body() dto: BulkChangeStatusPageDto,
     @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.pagesService.changeStatusMany(dto.ids, dto.status, admin.sub);
+    return this.pagesService.changeStatusManyPage(
+      dto.ids,
+      dto.status,
+      admin.sub,
+    );
   }
 
   @Patch('bulk/soft-delete')
@@ -182,18 +185,18 @@ export class PagesController {
     return this.pagesService.updatePage(id, dto, admin.sub);
   }
 
-  @Patch(':id/status')
-  @Roles(AdminRole.EDITOR, AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Estado actualizado exitosamente')
-  @ApiOperation({ summary: 'Cambiar estado de página individual' })
-  changeStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() status: PageStatus,
-    @CurrentUser() admin: AdminJwtPayload,
-  ) {
-    return this.pagesService.changeStatus(id, status, admin.sub);
-  }
+  // @Patch(':id/status')
+  // @Roles(AdminRole.EDITOR, AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  // @ApiBearerAuth('access-token')
+  // @ResponseMessage('Estado actualizado exitosamente')
+  // @ApiOperation({ summary: 'Cambiar estado de página individual' })
+  // changeStatus(
+  //   @Param('id', ParseUUIDPipe) id: string,
+  //   @Body() status: PageStatus,
+  //   @CurrentUser() admin: AdminJwtPayload,
+  // ) {
+  //   return this.pagesService.changeStatus(id, status, admin.sub);
+  // }
 
   @Patch(':id/soft-delete')
   @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)

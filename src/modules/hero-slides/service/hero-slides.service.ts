@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { ImageEntityType, LinkType, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BaseService } from '../../../common/services/base.service';
@@ -455,21 +451,21 @@ export class HeroSlidesService extends BaseService<
   // toggleActive
   // ═══════════════════════════════════════════════
 
-  async toggleActive(id: string) {
-    const slide = await this.prisma.heroSlide.findUnique({
-      where: { id },
-      select: { id: true, isActive: true },
-    });
+  // async toggleActive(id: string) {
+  //   const slide = await this.prisma.heroSlide.findUnique({
+  //     where: { id },
+  //     select: { id: true, isActive: true },
+  //   });
 
-    if (!slide) {
-      throw new NotFoundException(`HeroSlide con id "${id}" no encontrado`);
-    }
+  //   if (!slide) {
+  //     throw new NotFoundException(`HeroSlide con id "${id}" no encontrado`);
+  //   }
 
-    return this.prisma.heroSlide.update({
-      where: { id },
-      data: { isActive: !slide.isActive },
-    });
-  }
+  //   return this.prisma.heroSlide.update({
+  //     where: { id },
+  //     data: { isActive: !slide.isActive },
+  //   });
+  // }
 
   // ── Helpers privados ──────────────────────────────────────────────
 

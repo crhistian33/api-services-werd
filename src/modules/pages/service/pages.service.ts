@@ -204,11 +204,15 @@ export class PagesService extends SluggableService<
   // changeStatus — actualizar el estado de una página
   // ═══════════════════════════════════════════════
 
-  async changeStatus(id: string, status: PageStatus, adminId: string) {
-    return this.update(id, { status, updatedById: adminId } as UpdatePageDto);
-  }
+  // async changeStatus(id: string, status: PageStatus, adminId: string) {
+  //   return this.update(id, { status, updatedById: adminId } as UpdatePageDto);
+  // }
 
-  async changeStatusMany(ids: string[], status: PageStatus, adminId: string) {
+  async changeStatusManyPage(
+    ids: string[],
+    status: PageStatus,
+    adminId: string,
+  ) {
     return this.getModel().updateMany({
       where: {
         id: { in: ids },
