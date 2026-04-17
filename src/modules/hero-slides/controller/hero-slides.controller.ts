@@ -65,7 +65,7 @@ export class HeroSlidesController {
   @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
   @ApiBearerAuth('access-token')
   @ResponseMessage('Estados actualizados exitosamente')
-  @ApiOperation({ summary: 'Cambiar estado de múltiples categorías' })
+  @ApiOperation({ summary: 'Cambiar estado de múltiples slides' })
   changeStatus(
     @Body() dto: BulkChangeStatusHeroSlideDto,
     @CurrentUser() admin: AdminJwtPayload,

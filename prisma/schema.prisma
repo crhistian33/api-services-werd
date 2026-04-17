@@ -412,10 +412,12 @@ model Customer {
   lastName        String
   email           String    @unique
   phone           String?
-  passwordHash    String
+  passwordHash    String?
+  googleId        String?   @unique
   emailVerifiedAt DateTime?
   isActive        Boolean   @default(true)
   lastLoginAt     DateTime?
+  createdById     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
@@ -425,10 +427,26 @@ model Customer {
   carts        Cart[]
   reviews      ProductReview[]
   couponUsages CouponUsage[]
+  verificationCodes CustomerVerificationCode[]
+  deletedBy AdminUser?    @relation("CustomerDeletedBy", fields: [deletedById], references: [id])
 
   @@index([email])
   @@index([createdAt])
   @@map("customers")
+}
+
+model CustomerVerificationCode {
+  id         String   @id @default(uuid())
+  code       String   // Código de 6 dígitos
+  email      String
+  expiresAt  DateTime
+  customerId String
+  createdAt  DateTime @default(now())
+  
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@map("customer_verification_codes")
 }
 
 model CustomerAddress {
@@ -437,19 +455,24 @@ model CustomerAddress {
   alias         String?
   recipientName String
   phone         String?
-  department    String
-  province      String
-  district      String
+  departmentId  String
+  provinceId    String
+  districtId    String
   addressLine   String
   reference     String?
   latitude      Decimal? @db.Decimal(10, 8)
   longitude     Decimal? @db.Decimal(11, 8)
   isDefault     Boolean  @default(false)
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  department    Department @relation(fields: [departmentId], references: [id])
+  province      Province   @relation(fields: [provinceId], references: [id])
+  district      District   @relation(fields: [districtId], references: [id])
 
   @@index([customerId])
+  @@index([districtId])
   @@map("customer_addresses")
 }
 
@@ -599,6 +622,7 @@ model Department {
   
   provinces  Province[]
   zoneAreas  ShippingZoneArea[]
+  addresses CustomerAddress[]
 
   @@map("departments")
 }
@@ -611,6 +635,7 @@ model Province {
   department Department @relation(fields: [departmentId], references: [id])
   districts  District[]
   zoneAreas  ShippingZoneArea[]
+  addresses CustomerAddress[]
 
   @@unique([name, departmentId])
   @@map("provinces")
@@ -623,6 +648,7 @@ model District {
   
   province  Province           @relation(fields: [provinceId], references: [id])
   zoneAreas ShippingZoneArea[]
+  addresses CustomerAddress[]
 
   @@unique([name, provinceId])
   @@map("districts")
@@ -1023,7 +1049,10 @@ model AdminUser {
 
   // ── FAQ ──────────────────────────────────────────────────
   faqsCreated Faq[] @relation("FaqCreatedBy")
-faqsUpdated Faq[] @relation("FaqUpdatedBy")
+  faqsUpdated Faq[] @relation("FaqUpdatedBy")
+
+  // ── Clientes ─────────────────────────────────────────────
+  customersDeleted Customer[] @relation("CustomerDeletedBy")
 
   @@index([email])
   @@map("admin_users")

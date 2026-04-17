@@ -11,7 +11,7 @@ import {
   UpdateHeroSlideDto,
   QueryHeroSlideDto,
 } from '../dto';
-import { BulkReorderHeroSlidesDto } from '../dto/bulk-hero.dto';
+import { BulkReorderHeroSlidesDto } from '../dto/bulk-hero-slide.dto';
 
 type HeroSlideEntity = Prisma.HeroSlideGetPayload<{
   include: {

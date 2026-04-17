@@ -18,6 +18,7 @@ import { jwtConfig } from './config/jwt.config';
 import { FaqsModule } from './modules/faqs/faqs.module';
 import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 import { ShippingZonesModule } from './modules/shipping-zones/shipping-zones.module';
+import { RolesModule } from './modules/roles/roles.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ShippingZonesModule } from './modules/shipping-zones/shipping-zones.mod
     FaqsModule,
     PaymentMethodsModule,
     ShippingZonesModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
