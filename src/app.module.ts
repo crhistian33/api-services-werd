@@ -19,6 +19,8 @@ import { FaqsModule } from './modules/faqs/faqs.module';
 import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 import { ShippingZonesModule } from './modules/shipping-zones/shipping-zones.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { MailModule } from './modules/mail/mail.module';
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { RolesModule } from './modules/roles/roles.module';
     PaymentMethodsModule,
     ShippingZonesModule,
     RolesModule,
+    CustomersModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

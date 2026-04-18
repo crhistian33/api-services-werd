@@ -417,7 +417,8 @@ model Customer {
   emailVerifiedAt DateTime?
   isActive        Boolean   @default(true)
   lastLoginAt     DateTime?
-  createdById     String?
+  updatedById     String?
+  deletedById     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
@@ -428,6 +429,9 @@ model Customer {
   reviews      ProductReview[]
   couponUsages CouponUsage[]
   verificationCodes CustomerVerificationCode[]
+  customerRefreshTokens CustomerRefreshToken[]
+  
+  updatedBy  AdminUser?  @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
   deletedBy AdminUser?    @relation("CustomerDeletedBy", fields: [deletedById], references: [id])
 
   @@index([email])
@@ -1053,6 +1057,7 @@ model AdminUser {
 
   // ── Clientes ─────────────────────────────────────────────
   customersDeleted Customer[] @relation("CustomerDeletedBy")
+  customersUpdated Customer[] @relation("CustomerUpdatedBy")
 
   @@index([email])
   @@map("admin_users")
@@ -1075,6 +1080,25 @@ model AdminRefreshToken {
   @@index([adminUserId])
   @@index([tokenHash])
   @@map("admin_refresh_tokens")
+}
+
+// =============================================================
+// REFRESH TOKENS — CUSTOMER
+// =============================================================
+
+model CustomerRefreshToken {
+  id          String   @id @default(uuid())
+  customerId  String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([tokenHash])
+  @@map("customer_refresh_tokens")
 }
 
 // =============================================================

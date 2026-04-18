@@ -23,3 +23,11 @@ export interface AdminJwtPayload extends AuthAccessPayload {
 export interface AdminRefreshPayload extends AuthRefreshPayload {
   userType: 'admin';
 }
+
+export interface CustomerJwtPayload extends AuthAccessPayload {
+  userType: 'customer';
+}
+
+export interface CustomerRefreshPayload extends AuthRefreshPayload {
+  userType: 'customer';
+}

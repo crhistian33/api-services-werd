@@ -75,17 +75,27 @@ export class JwtAuthGuard implements CanActivate {
       }
 
       // 5. VALIDACIÓN FULMINANTE: ¿Existe una sesión activa en DB?
-      // Si el usuario hizo Logout, revokedAt NO será null.
-      const session = await this.prisma.adminRefreshToken.findFirst({
-        where: {
-          adminUserId: payload.sub,
-          revokedAt: null, // Solo permitimos si la sesión está abierta
-          expiresAt: { gt: new Date() }, // Y no ha expirado
-        },
-      });
-
-      if (!session) {
-        throw new UnauthorizedException('Sesión cerrada o inválida');
+      // Comprobamos la tabla correspondiente según el tipo de usuario.
+      if (payload.userType === 'admin') {
+        const session = await this.prisma.adminRefreshToken.findFirst({
+          where: {
+            adminUserId: payload.sub,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        });
+        if (!session)
+          throw new UnauthorizedException('Sesión cerrada o inválida');
+      } else if (payload.userType === 'customer') {
+        const session = await this.prisma.customerRefreshToken.findFirst({
+          where: {
+            customerId: payload.sub,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        });
+        if (!session)
+          throw new UnauthorizedException('Sesión cerrada o inválida');
       }
 
       // Inyectamos el payload en la request
