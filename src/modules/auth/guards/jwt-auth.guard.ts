@@ -38,9 +38,7 @@ export class JwtAuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException(
-        'Tu sesión ha expirado o no has iniciado sesión.',
-      );
+      throw new UnauthorizedException('Token no proporcionado');
     }
 
     try {
@@ -48,7 +46,7 @@ export class JwtAuthGuard implements CanActivate {
       // Usamos 'AuthAccessPayload' en lugar de 'any' para complacer a ESLint
       const decoded = this.jwtService.decode<AuthAccessPayload>(token);
 
-      if (!decoded || !decoded.userType) {
+      if (!decoded?.userType) {
         throw new UnauthorizedException('Estructura de token inválida');
       }
 
@@ -76,40 +74,40 @@ export class JwtAuthGuard implements CanActivate {
 
       // 5. VALIDACIÓN FULMINANTE: ¿Existe una sesión activa en DB?
       // Comprobamos la tabla correspondiente según el tipo de usuario.
-      if (payload.userType === 'admin') {
-        const session = await this.prisma.adminRefreshToken.findFirst({
-          where: {
-            adminUserId: payload.sub,
-            revokedAt: null,
-            expiresAt: { gt: new Date() },
-          },
-        });
-        if (!session)
-          throw new UnauthorizedException('Sesión cerrada o inválida');
-      } else if (payload.userType === 'customer') {
-        const session = await this.prisma.customerRefreshToken.findFirst({
-          where: {
-            customerId: payload.sub,
-            revokedAt: null,
-            expiresAt: { gt: new Date() },
-          },
-        });
-        if (!session)
-          throw new UnauthorizedException('Sesión cerrada o inválida');
-      }
+      // if (payload.userType === 'admin') {
+      //   const session = await this.prisma.adminRefreshToken.findFirst({
+      //     where: {
+      //       adminUserId: payload.sub,
+      //       revokedAt: null,
+      //       expiresAt: { gt: new Date() },
+      //     },
+      //   });
+      //   if (!session)
+      //     throw new UnauthorizedException('Sesión cerrada o inválida');
+      // } else if (payload.userType === 'customer') {
+      //   const session = await this.prisma.customerRefreshToken.findFirst({
+      //     where: {
+      //       customerId: payload.sub,
+      //       revokedAt: null,
+      //       expiresAt: { gt: new Date() },
+      //     },
+      //   });
+      //   if (!session)
+      //     throw new UnauthorizedException('Sesión cerrada o inválida');
+      // }
 
       // Inyectamos el payload en la request
       request.user = payload;
     } catch (error) {
+      const message =
+        error instanceof UnauthorizedException
+          ? error.message
+          : 'Token inválido o expirado';
+
       if (process.env.NODE_ENV === 'development') {
-        // Verificamos si es un objeto Error real
-        const errorMessage =
-          error instanceof Error ? error.message : 'Error desconocido';
-        console.error('Error de JWT en Guard:', errorMessage);
+        console.error('Error de JWT en Guard:', message);
       }
-      throw new UnauthorizedException(
-        'Tu sesión ya no es válida. Por favor, ingresa tus credenciales nuevamente.',
-      );
+      throw new UnauthorizedException(message);
     }
 
     return true;

@@ -112,4 +112,26 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
       },
     ],
   },
+  order_logistics: {
+    entityType: ImageEntityType.ORDER_LOGISTICS,
+    roles: [
+      {
+        role: 'shipping_evidence',
+        maxCount: 3,
+        allowedMimeTypes: ['image/jpeg', 'image/png'],
+        maxSizeBytes: 5 * 1024 * 1024,
+      },
+    ],
+  },
+  order_claim: {
+    entityType: ImageEntityType.ORDER_CLAIM,
+    roles: [
+      {
+        role: 'customer_evidence',
+        maxCount: 5,
+        allowedMimeTypes: ['image/jpeg', 'image/png'],
+        maxSizeBytes: 5 * 1024 * 1024,
+      },
+    ],
+  },
 };

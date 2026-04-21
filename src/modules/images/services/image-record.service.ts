@@ -81,6 +81,12 @@ export class ImageRecordService {
     });
   }
 
+  async findById(imageId: string): Promise<ImageRecord | null> {
+    return this.prisma.image.findUnique({
+      where: { id: imageId },
+    });
+  }
+
   // ═══════════════════════════════════════════════
   // findTempRecord
   // Paso 1 del flujo — solo lectura, sin efectos secundarios.

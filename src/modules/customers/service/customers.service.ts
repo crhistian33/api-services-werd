@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 
 import * as bcrypt from 'bcrypt';
@@ -19,6 +20,8 @@ import {
 } from '../dto';
 import { MailService } from '../../mail/service/mail.service';
 import { Prisma } from 'generated/prisma/client';
+import { CreateCustomerAddressDto } from 'src/modules/customers/dto/create-customer-address.dto';
+import { UpdateCustomerAddressDto } from 'src/modules/customers/dto/update-customer-address.dto';
 
 // Definición de la entidad con sus relaciones para el tipado del BaseService
 type CustomerEntity = Prisma.CustomerGetPayload<{
@@ -273,4 +276,422 @@ export class CustomersService extends BaseService<
         'Si el correo está registrado, se enviará un código de verificación.',
     };
   }
+
+  // ═══════════════════════════════════════════════
+  // PUBLIC: Direcciones del cliente
+  // ═══════════════════════════════════════════════
+
+  async getMyAddresses(customerId: string) {
+    return this.prisma.customerAddress.findMany({
+      where: { customerId },
+      include: {
+        department: { select: { id: true, name: true } },
+        province: { select: { id: true, name: true } },
+        district: { select: { id: true, name: true } },
+      },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async createAddress(customerId: string, dto: CreateCustomerAddressDto) {
+    return this.prisma.$transaction(async (tx) => {
+      // Si se marca como default, quitar el default de las demás
+      if (dto.isDefault) {
+        await tx.customerAddress.updateMany({
+          where: { customerId, isDefault: true },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.customerAddress.create({
+        data: {
+          customerId,
+          alias: dto.alias,
+          recipientName: dto.recipientName,
+          phone: dto.phone,
+          addressLine: dto.addressLine,
+          reference: dto.reference,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          isDefault: dto.isDefault ?? false,
+          departmentId: dto.departmentId,
+          provinceId: dto.provinceId,
+          districtId: dto.districtId,
+        },
+        include: {
+          department: { select: { id: true, name: true } },
+          province: { select: { id: true, name: true } },
+          district: { select: { id: true, name: true } },
+        },
+      });
+    });
+  }
+
+  async updateAddress(
+    customerId: string,
+    addressId: string,
+    dto: UpdateCustomerAddressDto,
+  ) {
+    // Verificar que la dirección pertenece al cliente
+    const address = await this.prisma.customerAddress.findFirst({
+      where: { id: addressId, customerId },
+    });
+
+    if (!address) throw new NotFoundException('Dirección no encontrada');
+
+    return this.prisma.$transaction(async (tx) => {
+      // Si se marca como default, quitar el default de las demás
+      if (dto.isDefault) {
+        await tx.customerAddress.updateMany({
+          where: { customerId, isDefault: true, id: { not: addressId } },
+          data: { isDefault: false },
+        });
+      }
+
+      const { departmentId, provinceId, districtId, ...rest } = dto;
+
+      return tx.customerAddress.update({
+        where: { id: addressId },
+        data: {
+          ...rest,
+          ...(departmentId && {
+            department: { connect: { id: departmentId } },
+          }),
+          ...(provinceId && { province: { connect: { id: provinceId } } }),
+          ...(districtId && { district: { connect: { id: districtId } } }),
+        },
+        include: {
+          department: { select: { id: true, name: true } },
+          province: { select: { id: true, name: true } },
+          district: { select: { id: true, name: true } },
+        },
+      });
+    });
+  }
+
+  async deleteAddress(customerId: string, addressId: string) {
+    const address = await this.prisma.customerAddress.findFirst({
+      where: { id: addressId, customerId },
+    });
+
+    if (!address) throw new NotFoundException('Dirección no encontrada');
+
+    await this.prisma.customerAddress.delete({ where: { id: addressId } });
+    return { message: 'Dirección eliminada correctamente' };
+  }
+
+  async setDefaultAddress(customerId: string, addressId: string) {
+    const address = await this.prisma.customerAddress.findFirst({
+      where: { id: addressId, customerId },
+    });
+
+    if (!address) throw new NotFoundException('Dirección no encontrada');
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.customerAddress.updateMany({
+        where: { customerId, isDefault: true },
+        data: { isDefault: false },
+      });
+      return tx.customerAddress.update({
+        where: { id: addressId },
+        data: { isDefault: true },
+      });
+    });
+  }
+
+  // ═══════════════════════════════════════════════
+  // PUBLIC: Solicitudes de devolución (cliente)
+  // ═══════════════════════════════════════════════
+
+  // async createRefundRequest(
+  //   customerId: string,
+  //   orderId: string,
+  //   dto: CreateRefundRequestDto,
+  // ) {
+  //   // 1. Verificar que el pedido pertenece al cliente y está en estado devolvible
+  //   const order = await this.prisma.order.findFirst({
+  //     where: { id: orderId, customerId },
+  //     include: {
+  //       items: { include: { refundRequests: true, refundItems: true } },
+  //       refundRequests: { where: { status: 'pending' } },
+  //     },
+  //   });
+
+  //   if (!order) throw new NotFoundException('Pedido no encontrado');
+
+  //   const refundableStatuses = ['delivered', 'paid', 'processing', 'shipped'];
+  //   if (!refundableStatuses.includes(order.status)) {
+  //     throw new BadRequestException(
+  //       `No se puede solicitar devolución para un pedido en estado "${order.status}"`,
+  //     );
+  //   }
+
+  //   // 2. No permitir más de una solicitud pendiente por pedido
+  //   if (order.refundRequests.length > 0) {
+  //     throw new ConflictException(
+  //       'Ya existe una solicitud de devolución pendiente para este pedido',
+  //     );
+  //   }
+
+  //   // 3. Validar cada ítem solicitado
+  //   for (const reqItem of dto.items) {
+  //     const orderItem = order.items.find((i) => i.id === reqItem.orderItemId);
+
+  //     if (!orderItem) {
+  //       throw new NotFoundException(
+  //         `Ítem "${reqItem.orderItemId}" no pertenece a este pedido`,
+  //       );
+  //     }
+
+  //     // Unidades ya devueltas (OrderRefund aprobados)
+  //     const alreadyRefunded = orderItem.refundItems.reduce(
+  //       (s, r) => s + r.quantity,
+  //       0,
+  //     );
+  //     // Unidades ya en solicitud pendiente
+  //     const inRequest = orderItem.refundRequests.reduce(
+  //       (s, r) => s + r.quantity,
+  //       0,
+  //     );
+  //     const available = orderItem.quantity - alreadyRefunded - inRequest;
+
+  //     if (reqItem.quantity > available) {
+  //       throw new BadRequestException(
+  //         `Ítem "${orderItem.productName}": solo ${available} unidades disponibles para devolución`,
+  //       );
+  //     }
+  //   }
+
+  //   // 4. Crear la solicitud
+  //   return this.prisma.refundRequest.create({
+  //     data: {
+  //       orderId,
+  //       customerId,
+  //       reason: dto.reason,
+  //       items: {
+  //         create: dto.items.map((i) => ({
+  //           orderItemId: i.orderItemId,
+  //           quantity: i.quantity,
+  //           reason: i.reason,
+  //         })),
+  //       },
+  //     },
+  //     include: { items: true },
+  //   });
+  // }
+
+  // async getMyRefundRequests(customerId: string, orderId?: string) {
+  //   return this.prisma.refundRequest.findMany({
+  //     where: { customerId, ...(orderId && { orderId }) },
+  //     include: {
+  //       items: {
+  //         include: {
+  //           orderItem: {
+  //             select: {
+  //               productName: true,
+  //               productSku: true,
+  //               productImageUrl: true,
+  //             },
+  //           },
+  //         },
+  //       },
+  //       order: { select: { orderNumber: true, status: true } },
+  //     },
+  //     orderBy: { createdAt: 'desc' },
+  //   });
+  // }
+
+  // async cancelRefundRequest(customerId: string, requestId: string) {
+  //   const request = await this.prisma.refundRequest.findFirst({
+  //     where: { id: requestId, customerId, status: 'pending' },
+  //   });
+
+  //   if (!request) {
+  //     throw new NotFoundException(
+  //       'Solicitud no encontrada o no puede ser cancelada',
+  //     );
+  //   }
+
+  //   return this.prisma.refundRequest.update({
+  //     where: { id: requestId },
+  //     data: { status: 'cancelled' },
+  //   });
+  // }
+
+  // ═══════════════════════════════════════════════
+  // CMS: Revisar solicitudes de devolución (admin)
+  // ═══════════════════════════════════════════════
+
+  // async getAllRefundRequests(status?: string) {
+  //   return this.prisma.refundRequest.findMany({
+  //     where: { ...(status && { status: status as RefundRequestStatus }) },
+  //     include: {
+  //       customer: {
+  //         select: { id: true, firstName: true, lastName: true, email: true },
+  //       },
+  //       order: {
+  //         select: { id: true, orderNumber: true, status: true, total: true },
+  //       },
+  //       items: {
+  //         include: {
+  //           orderItem: {
+  //             select: {
+  //               productName: true,
+  //               productSku: true,
+  //               productImageUrl: true,
+  //               unitPrice: true,
+  //               quantity: true,
+  //               refundItems: true,
+  //             },
+  //           },
+  //         },
+  //       },
+  //       reviewedBy: { select: { id: true, name: true } },
+  //     },
+  //     orderBy: { createdAt: 'desc' },
+  //   });
+  // }
+
+  // async reviewRefundRequest(
+  //   requestId: string,
+  //   dto: ReviewRefundRequestDto,
+  //   adminId: string,
+  // ) {
+  //   const request = await this.prisma.refundRequest.findFirst({
+  //     where: { id: requestId, status: 'pending' },
+  //     include: {
+  //       items: {
+  //         include: {
+  //           orderItem: {
+  //             include: { refundItems: true },
+  //           },
+  //         },
+  //       },
+  //       order: true,
+  //     },
+  //   });
+
+  //   if (!request) {
+  //     throw new NotFoundException('Solicitud no encontrada o ya fue revisada');
+  //   }
+
+  //   if (dto.action === 'rejected') {
+  //     return this.prisma.refundRequest.update({
+  //       where: { id: requestId },
+  //       data: {
+  //         status: 'rejected',
+  //         reviewedById: adminId,
+  //         reviewNote: dto.reviewNote,
+  //         reviewedAt: new Date(),
+  //       },
+  //     });
+  //   }
+
+  //   // ── Aprobación: crear OrderRefund automáticamente ─────────────
+  //   return this.prisma.$transaction(async (tx) => {
+  //     // Actualizar solicitud
+  //     await tx.refundRequest.update({
+  //       where: { id: requestId },
+  //       data: {
+  //         status: 'approved',
+  //         reviewedById: adminId,
+  //         reviewNote: dto.reviewNote,
+  //         reviewedAt: new Date(),
+  //       },
+  //     });
+
+  //     // Calcular monto por ítem y determinar si es total o parcial
+  //     let totalRefunded = 0;
+  //     const refundItemsData: {
+  //       orderItemId: string;
+  //       quantity: number;
+  //       refundAmount: number;
+  //     }[] = [];
+
+  //     for (const reqItem of request.items) {
+  //       const oi = reqItem.orderItem;
+  //       const netUnit =
+  //         (Number(oi.lineTotal) - Number(oi.discountAmount ?? 0)) / oi.quantity;
+  //       const amount = netUnit * reqItem.quantity;
+  //       totalRefunded += amount;
+  //       refundItemsData.push({
+  //         orderItemId: oi.id,
+  //         quantity: reqItem.quantity,
+  //         refundAmount: amount,
+  //       });
+
+  //       // Restaurar stock
+  //       await tx.product.update({
+  //         where: { id: oi.productId },
+  //         data: { stock: { increment: reqItem.quantity } },
+  //       });
+  //     }
+
+  //     // ¿Es devolución total? (todos los ítems del pedido cubiertos)
+  //     const allOrderItems = await tx.orderItem.findMany({
+  //       where: { orderId: request.orderId },
+  //       include: { refundItems: true },
+  //     });
+
+  //     const isFullRefund = allOrderItems.every((item) => {
+  //       const previouslyRefunded = item.refundItems.reduce(
+  //         (s, r) => s + r.quantity,
+  //         0,
+  //       );
+  //       const thisRefund =
+  //         refundItemsData.find((r) => r.orderItemId === item.id)?.quantity ?? 0;
+  //       return previouslyRefunded + thisRefund >= item.quantity;
+  //     });
+
+  //     // Número de devolución
+  //     const refundCount = await tx.orderRefund.count({
+  //       where: { orderId: request.orderId },
+  //     });
+  //     const refundNumber = `REF-${request.order.orderNumber}-${(refundCount + 1).toString().padStart(2, '0')}`;
+
+  //     // Crear OrderRefund
+  //     const refund = await tx.orderRefund.create({
+  //       data: {
+  //         orderId: request.orderId,
+  //         refundNumber,
+  //         reason: request.reason,
+  //         totalRefunded,
+  //         isPartial: !isFullRefund,
+  //         approvedById: adminId,
+  //         approvedAt: new Date(),
+  //         items: { create: refundItemsData },
+  //       },
+  //       include: { items: true },
+  //     });
+
+  //     // Si es devolución total, marcar el pedido
+  //     if (isFullRefund) {
+  //       await tx.order.update({
+  //         where: { id: request.orderId },
+  //         data: { status: 'refunded', refundedAt: new Date() },
+  //       });
+  //       await tx.orderStatusHistory.create({
+  //         data: {
+  //           orderId: request.orderId,
+  //           fromStatus: request.order.status,
+  //           toStatus: 'refunded',
+  //           changedById: adminId,
+  //           comment: `Devolución total aprobada. Ref: ${refundNumber}`,
+  //         },
+  //       });
+  //     } else {
+  //       await tx.orderStatusHistory.create({
+  //         data: {
+  //           orderId: request.orderId,
+  //           fromStatus: request.order.status,
+  //           toStatus: request.order.status,
+  //           changedById: adminId,
+  //           comment: `Devolución parcial aprobada. Ref: ${refundNumber}. Monto: S/. ${totalRefunded.toFixed(2)}`,
+  //         },
+  //       });
+  //     }
+
+  //     return refund;
+  //   });
+  // }
 }

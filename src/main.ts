@@ -48,7 +48,14 @@ async function bootstrap() {
     )
     .build();
   const documentFactory = () => SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, documentFactory);
+  SwaggerModule.setup('api/docs', app, documentFactory, {
+    swaggerOptions: {
+      docExpansion: 'none', // 'none' = expande todos | 'list' = colapsa todos | 'full' = expande todo completamente
+      filter: true, // Muestra barra de búsqueda
+      showRequestDuration: true, // Muestra duración de requests
+      persistAuthorization: true, // Mantiene el token entre recargas
+    },
+  });
 
   await app.listen(process.env.PORT ?? 3000);
   console.log(`🚀 API:    http://localhost:${process.env.PORT ?? 3000}/api/v1`);

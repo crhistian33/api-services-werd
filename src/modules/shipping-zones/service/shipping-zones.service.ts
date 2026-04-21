@@ -26,7 +26,7 @@ type ShippingZoneEntity = Prisma.ShippingZoneGetPayload<{
 
 // ── Include para listado — ligero, sin áreas completas ─────────
 const LIST_INCLUDE = {
-  _count: { select: { areas: true, rates: true, orders: true } },
+  _count: { select: { areas: true, rates: true } },
   createdBy: { select: { id: true, name: true, email: true } },
   updatedBy: { select: { id: true, name: true, email: true } },
 } as const;
@@ -42,8 +42,15 @@ const DETAIL_INCLUDE = {
     },
   },
   rates: {
-    where: { isActive: true },
     orderBy: { price: 'asc' as const },
+    include: {
+      // Incluir conteo de órdenes para cada tarifa (útil para estadísticas)
+      _count: {
+        select: { orders: true },
+      },
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
+    },
   },
   createdBy: { select: { id: true, name: true, email: true } },
   updatedBy: { select: { id: true, name: true, email: true } },
@@ -122,7 +129,7 @@ export class ShippingZonesService extends BaseService<
           : provinceId
             ? { provinceId, districtId: null }
             : { provinceId: null, districtId: null }),
-        zone: { isActive: true },
+        zone: { isActive: true, rates: { some: { isActive: true } } },
       },
       include: {
         zone: {
@@ -277,6 +284,7 @@ export class ShippingZonesService extends BaseService<
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
+        _count: { select: { orders: true } },
       },
     });
   }

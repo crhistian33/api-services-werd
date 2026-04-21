@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+        .header {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .content {
+            padding: 40px;
+            color: #334155;
+            line-height: 1.6;
+        }
+        .approved-box {
+            background-color: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .refund-amount {
+            font-size: 28px;
+            font-weight: 700;
+            color: #059669;
+        }
+        .return-address {
+            background-color: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ ¡Solicitud Aprobada!</h1>
+        </div>
+        <div class="content">
+            <p>Hola <strong>{{customerName}}</strong>,</p>
+            <p>Tu solicitud de {{claimType}} <strong>{{claimNumber}}</strong> ha sido aprobada.</p>
+            
+            <div class="approved-box">
+                {{#if totalRefundedAmount}}
+                <p style="margin-bottom: 8px;">Monto a reembolsar:</p>
+                <p class="refund-amount">S/ {{totalRefundedAmount}}</p>
+                {{/if}}
+                
+                {{#if reviewNote}}
+                <p style="margin-top: 16px;"><strong>Nota del equipo:</strong></p>
+                <p style="font-style: italic;">"{{reviewNote}}"</p>
+                {{/if}}
+            </div>
+            
+            {{#if requiresReturn}}
+            <div class="return-address">
+                <p><strong>📦 Instrucciones de devolución:</strong></p>
+                <p>Por favor, envía el producto a la siguiente dirección:</p>
+                <p style="font-weight: 600; margin-top: 8px;">{{returnAddress}}</p>
+                <p style="font-size: 14px; color: #64748b; margin-top: 8px;">
+                    Una vez recibido, procesaremos el reembolso en 3-5 días hábiles.
+                </p>
+            </div>
+            {{/if}}
+        </div>
+        <div class="footer">
+            &copy; 2026 Werd. Todos los derechos reservados.
+        </div>
+    </div>
+</body>
+</html>

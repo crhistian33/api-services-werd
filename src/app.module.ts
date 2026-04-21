@@ -21,6 +21,7 @@ import { ShippingZonesModule } from './modules/shipping-zones/shipping-zones.mod
 import { RolesModule } from './modules/roles/roles.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { MailModule } from './modules/mail/mail.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { MailModule } from './modules/mail/mail.module';
     RolesModule,
     CustomersModule,
     MailModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

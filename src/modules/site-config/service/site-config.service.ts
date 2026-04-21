@@ -32,8 +32,8 @@ export class SiteConfigService implements OnModuleInit {
     if (count === 0) {
       await this.prisma.siteConfig.create({
         data: {
-          storeName: 'Mi Tienda',
-          storeEmail: 'contacto@mitienda.com',
+          storeName: process.env.STORE_NAME ?? 'Mi Tienda',
+          storeEmail: process.env.STORE_EMAIL ?? 'contacto@mitienda.com',
         },
       });
     }
