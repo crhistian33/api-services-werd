@@ -1,0 +1,110 @@
+{{!-- ✅ NUEVO: templates/claim-shipped-admin.hbs --}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            margin: 0; padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 600px; margin: 40px auto;
+            background-color: #1e293b; border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .header {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            padding: 30px 20px; text-align: center;
+        }
+        .badge {
+            display: inline-block;
+            background-color: rgba(255,255,255,0.15);
+            color: #fff; border-radius: 20px;
+            padding: 4px 14px; font-size: 12px;
+            font-weight: 700; letter-spacing: 1px;
+            text-transform: uppercase; margin-bottom: 12px;
+        }
+        .header h1 { 
+            color: #fff; margin: 0; font-size: 22px; font-weight: 700; 
+        }
+        .content { 
+            padding: 32px 40px; color: #e2e8f0; line-height: 1.6; 
+        }
+        .info-box {
+            background-color: #0f172a; border-radius: 8px;
+            padding: 20px; margin: 20px 0;
+        }
+        .info-row {
+            display: flex; justify-content: space-between;
+            padding: 10px 0; border-bottom: 1px solid #1e293b;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #94a3b8; font-size: 13px; }
+        .info-value { color: #f1f5f9; font-weight: 600; text-align: right; }
+        .tracking-box {
+            background-color: #1e3a5f; border-radius: 8px;
+            padding: 16px; margin: 20px 0; text-align: center;
+        }
+        .tracking-number {
+            font-size: 28px; font-weight: 700; color: #60a5fa;
+            letter-spacing: 2px; margin: 8px 0;
+        }
+        .tracking-label {
+            color: #94a3b8; font-size: 11px;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .action-box {
+            background-color: #f59e0b; border-radius: 8px;
+            padding: 16px; margin: 20px 0; text-align: center;
+        }
+        .action-box p {
+            color: #1e293b; margin: 0; font-weight: 600; font-size: 14px;
+        }
+        .footer {
+            background-color: #0f172a; padding: 16px;
+            text-align: center; font-size: 12px; color: #475569;
+            border-top: 1px solid #1e293b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="badge">📦 Devolución en proceso</div>
+            <h1>Cliente envió {{claimType}}</h1>
+        </div>
+        <div class="content">
+            <p>El cliente <strong>{{customerName}}</strong> ha confirmado el envío del producto de retorno para el reclamo <strong>{{claimNumber}}</strong>.</p>
+            
+            <div class="info-box">
+                <div class="info-row">
+                    <span class="info-label">Reclamo</span>
+                    <span class="info-value">{{claimNumber}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Pedido original</span>
+                    <span class="info-value">{{orderNumber}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Tipo</span>
+                    <span class="info-value">{{claimType}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Productos</span>
+                    <span class="info-value">{{items}}</span>
+                </div>
+                {{#if shippingCost}}
+                <div class="info-row">
+                    <span class="info-label">Costo de envío (cliente)</span>
+                    <span class="info-value">S/ {{shippingCost}}</span>
+                </div>
+                {{/if}}
+            </div>
+
+            <div class="tracking-box">
+                <p class="tracking-label">🔍 Número de tracking</p>
+                <p class="tracking-number">{{

@@ -1,0 +1,23 @@
+import { PaginationDto } from '../dto/pagination.dto';
+export interface PaginationMeta {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+export interface PaginatedResult<T> {
+    data: T[];
+    meta: PaginationMeta;
+}
+export interface BatchResult {
+    count: number;
+}
+export interface FindAllParams<WhereInput, OrderByInput> {
+    where?: WhereInput;
+    orderBy?: OrderByInput | OrderByInput[];
+    include?: object;
+    select?: object;
+    pagination?: PaginationDto;
+    includeDeleted?: boolean;
+    onlyTrash?: boolean;
+}
