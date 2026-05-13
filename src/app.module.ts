@@ -22,6 +22,7 @@ import { RolesModule } from './modules/roles/roles.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { MailModule } from './modules/mail/mail.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { OrdersModule } from './modules/orders/orders.module';
     CustomersModule,
     MailModule,
     OrdersModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
