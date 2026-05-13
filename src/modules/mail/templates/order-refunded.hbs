@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+        .header {
+            background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .content {
+            padding: 40px;
+            color: #334155;
+            line-height: 1.6;
+        }
+        .refund-box {
+            background-color: #f5f3ff;
+            border: 1px solid #ddd6fe;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .refund-amount {
+            font-size: 36px;
+            font-weight: 700;
+            color: #7c3aed;
+            margin: 10px 0;
+        }
+        .refund-details {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+        }
+        .evidence-box {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .evidence-box img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Reembolso Procesado</h1>
+        </div>
+        <div class="content">
+            <p>Hola <strong>{{customerName}}</strong>,</p>
+            <p>Hemos procesado el reembolso de tu pedido.</p>
+            
+            <div class="refund-box">
+                <p style="margin: 0;">Pedido: <strong>{{orderNumber}}</strong></p>
+                <div class="refund-amount">S/ {{refundAmount}}</div>
+                <p style="margin: 5px 0; color: #64748b;">Fecha: {{refundDate}}</p>
+            </div>
+
+            <div class="refund-details">
+                <p style="margin: 5px 0;"><strong>Método de reembolso:</strong> {{refundMethodLabel}}</p>
+            </div>
+
+            {{#if evidenceImageUrl}}
+            <div class="evidence-box">
+                <p style="margin: 0 0 10px 0; font-weight: 600;">📎 Comprobante de reembolso</p>
+                <img src="{{evidenceImageUrl}}" alt="Comprobante de reembolso" />
+            </div>
+            {{/if}}
+
+            <p style="margin-top: 20px;">
+                {{refundInstructions}}
+            </p>
+
+            <p>Si tienes alguna pregunta, no dudes en contactar a nuestro equipo de soporte.</p>
+        </div>
+        <div class="footer">
+            &copy; 2026 Werd. Todos los derechos reservados.
+        </div>
+    </div>
+</body>
+</html>

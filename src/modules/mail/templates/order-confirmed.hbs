@@ -137,6 +137,17 @@
                 </tbody>
             </table>
 
+            {{#if isCashOnDelivery}}
+            <div style="background-color:#fffbeb; border:2px solid #fde68a; border-radius:8px; padding:16px; margin:20px 0;">
+                <p style="margin:0 0 8px 0; font-weight:700; font-size:16px;">💵 Pago Contra Entrega</p>
+                {{#if cashOnDeliveryInstructions}}
+                <p style="margin:0; color:#92400e;">{{cashOnDeliveryInstructions}}</p>
+                {{else}}
+                <p style="margin:0; color:#92400e;">Pagarás <strong>S/ {{total}}</strong> al momento de recibir tu pedido. Ten el monto exacto listo para el repartidor.</p>
+                {{/if}}
+            </div>
+            {{/if}}
+
             <div style="text-align: center;">
                 <a href="{{trackingUrl}}" class="tracking-button">📦 Seguir tu pedido</a>
             </div>

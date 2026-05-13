@@ -12,9 +12,10 @@ export class UpdateOrderDto {
     description:
       'Nuevo estado. Transiciones válidas: ' +
       'pending_payment→[paid,cancelled] | ' +
-      'paid→[processing,cancelled,refunded] | ' +
+      'paid→[processing,cancelled] | ' +
       'processing→[shipped,cancelled] | ' +
-      'shipped→[delivered] | delivered→[refunded]',
+      'shipped→[delivered] | ' +
+      'delivered→[] | cancelled→[] | refunded→[]',
   })
   @IsOptional()
   @IsEnum(OrderStatus)

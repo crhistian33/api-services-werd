@@ -1,8 +1,15 @@
 import { MailerService } from '@nestjs-modules/mailer';
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
+  CLAIM_TYPE_LABELS,
+  DELIVERY_TYPE_LABELS,
+  REFUND_METHOD_LABELS,
+} from '../../orders/constants/order-labels.constants';
+import { RefundMethod, ClaimType } from 'generated/prisma/client';
 
 // ─────────────────────────────────────────────────────────────
-// Tipos de contexto para cada template
+// Contextos de templates — EXISTENTES
 // ─────────────────────────────────────────────────────────────
 
 interface OrderConfirmedContext {
@@ -17,6 +24,8 @@ interface OrderConfirmedContext {
   }[];
   total: string;
   trackingUrl: string;
+  isCashOnDelivery?: boolean;
+  cashOnDeliveryInstructions?: string;
 }
 
 interface OrderShippedContext {
@@ -69,24 +78,123 @@ interface ClaimCompletedContext {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Labels para templates
+// Contextos de templates — NUEVOS
 // ─────────────────────────────────────────────────────────────
 
-const CLAIM_TYPE_LABELS: Record<string, string> = {
-  CANCELLATION: 'cancelación',
-  REFUND: 'devolución',
-  EXCHANGE: 'reemplazo',
-};
+interface OrderPendingPaymentContext {
+  customerName: string;
+  orderNumber: string;
+  total: string;
+  paymentMethodName: string;
+  paymentInstructions?: string;
+  whatsappNumber?: string;
+  paymentExpiresAt: string;
+}
 
-// Dirección de retorno de la tienda (cargar desde ConfigService en producción)
-const STORE_RETURN_ADDRESS = 'Jr. Comercio 123, Lima, Lima 15001';
-const STORE_TRACKING_BASE = 'https://tienda.werd.com/mis-pedidos';
+interface OrderPaymentReminderContext {
+  customerName: string;
+  orderNumber: string;
+  total: string;
+  paymentMethod: string;
+  horasRestantes: number;
+  paymentExpiresAt: string;
+  whatsappNumber?: string; // Número de WhatsApp de soporte (del .env)
+}
 
+interface OrderPaymentConfirmedContext {
+  customerName: string;
+  orderNumber: string;
+  total: string;
+  operationNumber: string;
+  paymentMethod: string;
+  confirmedAt: string;
+}
+
+interface OrderCancelledNoPaymentContext {
+  customerName: string;
+  orderNumber: string;
+  paymentMethod: string;
+  total: string;
+}
+
+interface OrderCancelledByAdminContext {
+  customerName: string;
+  orderNumber: string;
+  cancellationReason: string;
+  refundPending?: boolean; // ✅ AGREGADO
+  supportWhatsapp?: string | null; // ✅ AGREGADO
+  supportEmail?: string | null; // ✅ AGREGADO
+  canReorder?: boolean; // ✅ AGREGADO
+  storeUrl?: string;
+}
+
+interface OrderProcessingContext {
+  customerName: string;
+  orderNumber: string;
+  estimatedDays?: string;
+}
+
+interface OrderNewAdminContext {
+  orderNumber: string;
+  total: string;
+  customerName: string;
+  paymentMethod: string;
+  items: { productName: string; quantity: number; lineTotal: string }[];
+}
+
+interface OrderRefundedContext {
+  customerName: string;
+  orderNumber: string;
+  refundAmount: number;
+  refundMethod: string;
+  refundDate: string;
+  evidenceImageUrl?: string; // ✅ URL de la imagen de evidencia
+}
+
+interface ClaimShippedAdminContext {
+  claimNumber: string;
+  orderNumber: string;
+  customerName: string;
+  claimType: string;
+  courierName: string;
+  trackingNumber: string;
+  items: string;
+  shippingCost?: number;
+}
+
+interface ClaimShipmentConfirmedContext {
+  customerName: string;
+  claimNumber: string;
+  claimType: string;
+  orderNumber: string;
+  trackingNumber: string;
+  courierName: string;
+}
 @Injectable()
 export class MailService {
-  constructor(private readonly mailerService: MailerService) {}
+  constructor(
+    private readonly mailerService: MailerService,
+    private readonly config: ConfigService,
+  ) {}
 
-  // ── Helper central ────────────────────────────────────────────
+  // ── URLs y datos configurables desde .env ──────────────────
+  // STORE_FRONTEND_URL=https://tienda.werd.com
+  // STORE_RETURN_ADDRESS=Jr. Comercio 123, Lima, Lima 15001
+  private get storeFrontendUrl(): string {
+    return this.config.get<string>(
+      'STORE_FRONTEND_URL',
+      'https://tienda.werd.com',
+    );
+  }
+
+  private get storeReturnAddress(): string {
+    return this.config.get<string>(
+      'STORE_RETURN_ADDRESS',
+      'Consultar con soporte',
+    );
+  }
+
+  // ── Helper central ──────────────────────────────────────────
   private async send(
     to: string,
     subject: string,
@@ -95,17 +203,13 @@ export class MailService {
   ): Promise<void> {
     try {
       await this.mailerService.sendMail({ to, subject, template, context });
-    } catch (error) {
-      console.error(
-        `[MailService] Error enviando "${subject}" a ${to}:`,
-        error,
-      );
-      // No lanzamos excepción — el correo es auxiliar, no debe frenar el flujo principal
+    } catch (err: any) {
+      console.error(`[MailService] Error enviando "${subject}" a ${to}:`, err);
     }
   }
 
   // ═══════════════════════════════════════════════════════════
-  // AUTENTICACIÓN (ya existentes)
+  // AUTENTICACIÓN
   // ═══════════════════════════════════════════════════════════
 
   async sendVerificationEmail(email: string, code: string): Promise<void> {
@@ -124,7 +228,7 @@ export class MailService {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // CICLO DE VIDA DEL PEDIDO
+  // CICLO DE VIDA DEL PEDIDO — EXISTENTES
   // ═══════════════════════════════════════════════════════════
 
   async sendOrderConfirmed(
@@ -143,11 +247,23 @@ export class MailService {
     email: string,
     ctx: OrderShippedContext,
   ): Promise<void> {
+    const deliveryInstructions: Record<string, string> = {
+      COURIER:
+        'Tu pedido ha sido despachado por una agencia de courier. Puedes hacer seguimiento con el número de tracking.',
+      LOCAL_MOTORIZED:
+        'Tu pedido será entregado por un motorizado local. Te contactaremos cuando esté cerca de tu domicilio.',
+    };
+
     await this.send(
       email,
       `Tu pedido ${ctx.orderNumber} está en camino - Werd`,
       './order-shipped',
-      ctx,
+      {
+        ...ctx,
+        deliveryTypeLabel:
+          DELIVERY_TYPE_LABELS[ctx.deliveryType] || ctx.deliveryType,
+        deliveryInstructions: deliveryInstructions[ctx.deliveryType] || '',
+      },
     );
   }
 
@@ -161,9 +277,127 @@ export class MailService {
       './order-delivered',
       {
         ...ctx,
-        reviewUrl: `${STORE_TRACKING_BASE}`,
+        reviewUrl: `${this.storeFrontendUrl}/mis-pedidos`,
       },
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // CICLO DE VIDA DEL PEDIDO — NUEVOS
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Se envía al crear un pedido con pago manual pendiente (YAPE/PLIN/transferencia).
+   * Incluye las instrucciones del método, el número de WhatsApp y el tiempo límite.
+   */
+  async sendOrderPendingPayment(
+    email: string,
+    ctx: OrderPendingPaymentContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `Pedido ${ctx.orderNumber} - Completa tu pago - Werd`,
+      './order-pending-payment',
+      ctx,
+    );
+  }
+
+  /**
+   * Recordatorio enviado automáticamente N horas antes de que venza el pago.
+   */
+  async sendPaymentReminder(
+    email: string,
+    ctx: OrderPaymentReminderContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `⚠ Tu pedido ${ctx.orderNumber} está por vencer - Werd`,
+      './order-payment-reminder',
+      ctx,
+    );
+  }
+
+  /**
+   * Confirmación de que el admin verificó y aceptó el pago manual.
+   */
+  async sendOrderPaymentConfirmed(
+    email: string,
+    ctx: OrderPaymentConfirmedContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `Pago de pedido ${ctx.orderNumber} confirmado - Werd`,
+      './order-payment-confirmed',
+      ctx,
+    );
+  }
+
+  /**
+   * Notificación de cancelación automática por falta de pago.
+   */
+  async sendOrderCancelledNoPayment(
+    email: string,
+    ctx: OrderCancelledNoPaymentContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `Pedido ${ctx.orderNumber} cancelado por falta de pago - Werd`,
+      './order-cancelled-no-payment',
+      ctx,
+    );
+  }
+
+  /**
+   * Cancelación del pedido realizada directamente por el admin.
+   */
+  async sendOrderCancelledByAdmin(
+    email: string,
+    ctx: OrderCancelledByAdminContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `Tu pedido ${ctx.orderNumber} ha sido cancelado - Werd`,
+      './order-cancelled-admin',
+      {
+        ...ctx,
+        canReorder: true,
+        storeUrl: process.env.STORE_FRONTEND_URL || 'https://werd.com', // ✅ URL desde .env
+      },
+    );
+  }
+
+  /**
+   * Notificación opcional cuando el pedido pasa a "processing" (preparación).
+   * Activar según configuración de la tienda (notifyOnProcessing).
+   */
+  async sendOrderProcessing(
+    email: string,
+    ctx: OrderProcessingContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `Pedido ${ctx.orderNumber} en preparación - Werd`,
+      './order-processing',
+      ctx,
+    );
+  }
+
+  /**
+   * Notificación interna a los administradores cuando se recibe un nuevo pedido pagado.
+   * Enviar a múltiples destinatarios (storeEmail, supportEmail).
+   */
+  async sendOrderNewAdmin(
+    emails: string[],
+    ctx: OrderNewAdminContext,
+  ): Promise<void> {
+    for (const email of emails) {
+      await this.send(
+        email,
+        `🛒 Nuevo pedido ${ctx.orderNumber} - ${ctx.total} - Werd`,
+        './order-new-admin',
+        ctx,
+      );
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -187,13 +421,14 @@ export class MailService {
     claim: {
       customerName: string;
       claimNumber: string;
-      type: string;
+      type: ClaimType;
       orderNumber: string;
       reviewNote?: string;
       totalRefundedAmount?: number;
     },
   ): Promise<void> {
-    const requiresReturn = claim.type === 'REFUND' || claim.type === 'EXCHANGE';
+    const requiresReturn =
+      claim.type === 'REFUND' || claim.type === 'REPLACEMENT';
     const ctx: ClaimApprovedContext = {
       customerName: claim.customerName,
       claimNumber: claim.claimNumber,
@@ -202,7 +437,7 @@ export class MailService {
       reviewNote: claim.reviewNote,
       totalRefundedAmount: claim.totalRefundedAmount?.toFixed(2),
       requiresReturn,
-      returnAddress: requiresReturn ? STORE_RETURN_ADDRESS : undefined,
+      returnAddress: requiresReturn ? this.storeReturnAddress : undefined,
     };
 
     await this.send(
@@ -230,7 +465,7 @@ export class MailService {
     claim: {
       customerName: string;
       claimNumber: string;
-      type: string;
+      type: ClaimType;
       totalRefundedAmount?: number;
       completedAt: Date;
     },
@@ -247,6 +482,67 @@ export class MailService {
       email,
       `Solicitud ${claim.claimNumber} completada - Werd`,
       './claim-completed',
+      ctx,
+    );
+  }
+
+  async sendOrderRefunded(
+    email: string,
+    ctx: OrderRefundedContext,
+  ): Promise<void> {
+    const instructions: Record<string, string> = {
+      CARD: 'El monto será extornado a tu tarjeta de crédito o débito en los próximos 1-3 días hábiles.',
+      WALLET: 'El monto será devuelto a tu billetera digital (Yape/Plin).',
+      STORE_CREDIT: 'El crédito ya está disponible en tu cuenta de la tienda.',
+      BANK_TRANSFER:
+        'Recibirás el monto en tu cuenta bancaria en los próximos 1-3 días hábiles.',
+      CASH: 'Se coordinará la entrega en efectivo o contra-entrega.',
+    };
+
+    await this.send(
+      email,
+      `Reembolso procesado - Pedido ${ctx.orderNumber} - Werd`,
+      './order-refunded',
+      {
+        ...ctx,
+        refundMethodLabel:
+          REFUND_METHOD_LABELS[ctx.refundMethod as RefundMethod] ||
+          ctx.refundMethod,
+        refundInstructions:
+          instructions[ctx.refundMethod] ||
+          'Te notificaremos cuando el reembolso sea procesado.',
+      },
+    );
+  }
+
+  /**
+   * Notificación interna al admin: Cliente confirmó envío de producto devuelto
+   */
+  async sendClaimShippedAdmin(
+    emails: string[],
+    ctx: ClaimShippedAdminContext,
+  ): Promise<void> {
+    for (const email of emails) {
+      await this.send(
+        email,
+        `📦 Cliente envió ${ctx.claimType} — ${ctx.claimNumber} — Werd`,
+        './claim-shipped-admin',
+        ctx,
+      );
+    }
+  }
+
+  /**
+   * Confirmación al cliente: Recibimos los datos de tu envío de retorno
+   */
+  async sendClaimShipmentConfirmed(
+    email: string,
+    ctx: ClaimShipmentConfirmedContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `Envío de retorno registrado — ${ctx.claimNumber} — Werd`,
+      './claim-shipment-confirmed',
       ctx,
     );
   }

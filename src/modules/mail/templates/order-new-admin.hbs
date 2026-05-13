@@ -1,0 +1,193 @@
+<!-- templates/order-new-admin.hbs -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .header {
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .alert-badge {
+            display: inline-block;
+            background-color: rgba(255,255,255,0.15);
+            color: #fff;
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .content {
+            padding: 32px 40px;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+        .order-summary {
+            background-color: #0f172a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+            font-size: 14px;
+        }
+        .summary-row:last-child {
+            border-bottom: none;
+        }
+        .summary-label {
+            color: #94a3b8;
+        }
+        .summary-value {
+            color: #f1f5f9;
+            font-weight: 600;
+        }
+        .order-number {
+            font-size: 28px;
+            font-weight: 700;
+            color: #a78bfa;
+            text-align: center;
+            margin: 16px 0;
+        }
+        .total-box {
+            background-color: #7c3aed;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .total-label {
+            color: #ddd6fe;
+            font-size: 13px;
+            margin: 0 0 4px 0;
+        }
+        .total-amount {
+            color: #ffffff;
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0;
+        }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        .items-table th {
+            background-color: #0f172a;
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .items-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 24px 0 12px 0;
+        }
+        .footer {
+            background-color: #0f172a;
+            padding: 16px;
+            text-align: center;
+            font-size: 12px;
+            color: #475569;
+            border-top: 1px solid #1e293b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="alert-badge">🛒 Nuevo pedido</div>
+            <h1>¡Pedido recibido en Werd!</h1>
+        </div>
+        <div class="content">
+
+            <div class="order-number">{{orderNumber}}</div>
+
+            <div class="order-summary">
+                <div class="summary-row">
+                    <span class="summary-label">Cliente</span>
+                    <span class="summary-value">{{customerName}}</span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">Método de pago</span>
+                    <span class="summary-value">{{paymentMethod}}</span>
+                </div>
+            </div>
+
+            <div class="total-box">
+                <p class="total-label">TOTAL DEL PEDIDO</p>
+                <p class="total-amount">S/ {{total}}</p>
+            </div>
+
+            <p class="section-title">Productos</p>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th style="text-align:center;">Cant.</th>
+                        <th style="text-align:right;">Sub.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each items}}
+                    <tr>
+                        <td>{{productName}}</td>
+                        <td style="text-align:center;">{{quantity}}</td>
+                        <td style="text-align:right;">S/ {{lineTotal}}</td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+
+            <p style="margin-top: 24px; font-size: 13px; color: #64748b;">
+                Revisa el panel de administración para gestionar este pedido.
+            </p>
+        </div>
+        <div class="footer">
+            Werd CMS — Notificación interna &copy; 2026
+        </div>
+    </div>
+</body>
+</html>

@@ -128,8 +128,41 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
     roles: [
       {
         role: 'customer_evidence',
-        maxCount: 5,
+        maxCount: 3,
         allowedMimeTypes: ['image/jpeg', 'image/png'],
+        maxSizeBytes: 5 * 1024 * 1024,
+      },
+    ],
+  },
+  order_delivery: {
+    entityType: ImageEntityType.ORDER_DELIVERY,
+    roles: [
+      {
+        role: 'delivery_evidence',
+        maxCount: 3,
+        allowedMimeTypes: ['image/jpeg', 'image/png'],
+        maxSizeBytes: 5 * 1024 * 1024,
+      },
+    ],
+  },
+  order_refund: {
+    entityType: ImageEntityType.ORDER_REFUND,
+    roles: [
+      {
+        role: 'refund_evidence',
+        maxCount: 3,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        maxSizeBytes: 5 * 1024 * 1024,
+      },
+    ],
+  },
+  order_item_return: {
+    entityType: ImageEntityType.ORDER_ITEM_RETURN,
+    roles: [
+      {
+        role: 'return_evidence',
+        maxCount: 3,
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 5 * 1024 * 1024,
       },
     ],

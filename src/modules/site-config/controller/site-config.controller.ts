@@ -66,7 +66,6 @@ export class SiteConfigController {
   @ResponseMessage('Configuración actualizada exitosamente')
   @ApiOperation({ summary: 'Actualizar configuración del sitio' })
   update(@Body() dto: UpdateSiteConfigDto) {
-    console.log('DTO', dto);
     return this.siteConfigService.update(dto);
   }
 
@@ -87,7 +86,6 @@ export class SiteConfigController {
   @ResponseMessage('Redes sociales reordenadas exitosamente')
   @ApiOperation({ summary: 'Reordenar redes sociales' })
   reorderSocialLinks(@Body() dto: ReorderSocialLinksDto) {
-    console.log('DTO', dto);
     return this.siteConfigService.reorderSocialLinks(dto.ids);
   }
 

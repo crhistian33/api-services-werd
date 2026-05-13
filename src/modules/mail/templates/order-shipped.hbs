@@ -1,3 +1,5 @@
+<!-- templates/order-shipped.hbs -->
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -60,6 +62,22 @@
             margin: 8px 0;
             letter-spacing: 2px;
         }
+        .delivery-info {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+        }
+        .button {
+            display: inline-block;
+            background-color: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 14px 30px;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-top: 20px;
+        }
         .footer {
             background-color: #f8fafc;
             padding: 20px;
@@ -77,13 +95,11 @@
         </div>
         <div class="content">
             <p class="greeting">Hola <strong>{{customerName}}</strong>,</p>
-            <p>¡Buenas noticias! Tu pedido <strong>{{orderNumber}}</strong> ha sido despachado y está en camino a tu domicilio.</p>
+            <p>¡Buenas noticias! Tu pedido <strong>{{orderNumber}}</strong> ha sido enviado y está en camino a tu domicilio.</p>
             
             <div class="tracking-box">
                 <p class="tracking-label">📋 Tipo de envío</p>
-                <p style="font-weight: 600; margin-top: 4px;">
-                    {{#if (eq deliveryType "COURIER")}}Courier / Agencia{{else}}Motorizado Local{{/if}}
-                </p>
+                <p style="font-weight: 600; margin-top: 4px;">{{deliveryTypeLabel}}</p>
                 
                 {{#if trackingNumber}}
                 <p class="tracking-label" style="margin-top: 16px;">🔍 Número de seguimiento</p>
@@ -92,12 +108,24 @@
                 <p style="color: #64748b;">{{courierName}}</p>
                 {{/if}}
                 {{/if}}
-                
+
                 {{#if estimatedDelivery}}
                 <p class="tracking-label" style="margin-top: 16px;">📅 Entrega estimada</p>
                 <p style="font-weight: 600;">{{estimatedDelivery}}</p>
                 {{/if}}
             </div>
+
+            <div class="delivery-info">
+                <p style="margin: 5px 0;">{{deliveryInstructions}}</p>
+            </div>
+
+            {{#if trackingUrl}}
+            <div style="text-align: center;">
+                <a href="{{trackingUrl}}" class="button">📦 Hacer seguimiento</a>
+            </div>
+            {{/if}}
+
+            <p style="margin-top: 20px;">Si tienes alguna pregunta, no dudes en contactar a nuestro equipo de soporte.</p>
         </div>
         <div class="footer">
             &copy; 2026 Werd. Todos los derechos reservados.

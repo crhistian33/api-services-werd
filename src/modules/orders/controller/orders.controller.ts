@@ -8,334 +8,493 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
-  Req,
   HttpCode,
   HttpStatus,
+  Req,
+  Ip,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiParam,
-  ApiOkResponse,
-  ApiCreatedResponse,
   ApiBearerAuth,
+  ApiResponse,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
-
 import { OrdersService } from '../service/orders.service';
+import { OrderLogisticsService } from '../service/order-logistics.service';
 import { OrderClaimsService } from '../service/order-claims.service';
 import { OrderRefundService } from '../service/order-refund.service';
-import { OrderLogisticsService } from '../service/order-logistics.service';
-
+import { OrderPaymentConfirmationService } from '../service/order-payment-confirmation.service';
 import {
   CreateOrderDto,
-  UpdateOrderDto,
   QueryOrderDto,
+  UpdateLogisticsDto,
   CreateOrderClaimDto,
   ReviewClaimDto,
   QueryClaimDto,
-  CreateRefundDto,
-  UpdateLogisticsDto,
+  CancelOrderDto,
+  ConfirmClaimShipmentDto,
+  ConfirmReturnShipmentDto,
 } from '../dto';
-
-import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
+import { ConfirmManualPaymentDto } from '../dto/confirm-payment.dto';
+import { MarkDeliveredDto } from '../dto/mark-delivered.dto';
+import { MarkClaimReceivedDto } from '../dto/mark-claim-received.dto';
+import { CompleteRefundDto } from '../dto/complete-refund.dto';
+import { CreateRefundDto } from '../dto/create-refund.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
-import { Public } from '../../../common/decorators/public.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
+import { Public } from '../../../common/decorators/public.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-import type { AdminJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
-import type { CustomerJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import type {
+  AdminJwtPayload,
+  CustomerJwtPayload,
+} from '../../../common/interfaces/jwt-payload.interface';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 
 @ApiTags('Orders')
 @Controller('orders')
 export class OrdersController {
   constructor(
     private readonly ordersService: OrdersService,
-    private readonly orderClaimsService: OrderClaimsService,
-    private readonly orderRefundService: OrderRefundService,
-    private readonly orderLogisticsService: OrderLogisticsService,
+    private readonly logisticsService: OrderLogisticsService,
+    private readonly claimsService: OrderClaimsService,
+    private readonly refundService: OrderRefundService,
+    private readonly paymentConfirmationService: OrderPaymentConfirmationService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
-  // RUTAS PÚBLICAS (sin guard de auth)
+  // STOREFRONT - PÚBLICO (Clientes y Guests)
   // ═══════════════════════════════════════════════════════════
+
+  @Patch(':orderId/claims/:claimId/confirm-shipment')
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Envío de devolución confirmado exitosamente')
+  @ApiOperation({ summary: 'Cliente confirma envío del producto devuelto' })
+  @ApiParam({ name: 'orderId', type: String, description: 'ID de la orden' })
+  @ApiParam({ name: 'claimId', type: String, description: 'ID del reclamo' })
+  @ApiResponse({ status: 200, description: 'Envío confirmado exitosamente' })
+  @ApiResponse({
+    status: 404,
+    description: 'Reclamo no encontrado o no está aprobado',
+  })
+  async confirmClaimShipment(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('claimId', ParseUUIDPipe) claimId: string,
+    @Body() dto: ConfirmClaimShipmentDto,
+    @CurrentUser() customer: CustomerJwtPayload,
+  ) {
+    return this.claimsService.confirmClaimShipment(claimId, dto, customer.sub);
+  }
+
+  @Post(':orderId/claims')
+  @ApiBearerAuth('access-token') // ← Token de CUSTOMER (no admin)
+  @ResponseMessage('Reclamo creado exitosamente')
+  @ApiOperation({
+    summary: 'Crear reclamo desde el storefront (cliente)',
+    description:
+      'El cliente autenticado puede reclamar sobre sus propios pedidos. ' +
+      'CANCELLATION: antes del envío. REFUND/REPLACEMENT: tras el envío.',
+  })
+  @ApiParam({ name: 'orderId', description: 'UUID del pedido' })
+  createClaimFromStorefront(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: CreateOrderClaimDto,
+    @CurrentUser() customer: CustomerJwtPayload, // ← JWT de cliente
+  ) {
+    return this.claimsService.createClaim(customer.sub, orderId, dto);
+  }
 
   @Post()
   @Public()
   @ResponseMessage('Pedido creado exitosamente')
   @ApiOperation({
-    summary: 'Crear pedido — checkout',
+    summary: 'Crear pedido desde el checkout (cliente/guest)',
     description:
-      'Acepta cliente registrado (customerId) o guest (guestEmail). ' +
+      'Acepta customerId (cliente registrado) o guestEmail (invitado). ' +
       'Decrementa stock, valida cupón y crea snapshot inmutable de la dirección.',
   })
-  @ApiCreatedResponse({ description: 'Pedido creado' })
-  create(@Body() dto: CreateOrderDto, @Req() req: Request) {
+  createOrderFromStorefront(
+    @Body() dto: CreateOrderDto,
+    @Req() req: Request,
+    @Ip() ip: string,
+  ) {
     const ipAddress =
-      (req.headers['x-forwarded-for'] as string | undefined)
-        ?.split(',')[0]
-        ?.trim() ??
-      req.ip ??
-      undefined;
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? ip;
     return this.ordersService.createOrder({ ...dto, ipAddress });
   }
 
-  @Get('track/:orderNumber')
-  @Public()
-  @ResponseMessage('Información del pedido obtenida')
-  @ApiOperation({ summary: 'Rastrear pedido por número — público (guests)' })
-  @ApiParam({ name: 'orderNumber', example: 'ORD-20250418-0001' })
-  trackOrder(@Param('orderNumber') orderNumber: string) {
-    return this.ordersService.findOrderByNumber(orderNumber);
-  }
+  // ═══════════════════════════════════════════════════════════
+  // CMS - ADMIN (Creación manual excepcional)
+  // ═══════════════════════════════════════════════════════════
 
-  @Post('webhook/payment')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Webhook de confirmación de pago — pasarela' })
-  handlePaymentWebhook(@Body() body: Record<string, unknown>) {
-    const orderId = body['orderId'] as string;
-    const gatewayTransactionId = body['transactionId'] as string;
-    return this.ordersService.handlePaymentConfirmed(
-      orderId,
-      gatewayTransactionId,
-      body,
-    );
+  @Post('admin')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Pedido creado exitosamente desde CMS')
+  @ApiOperation({
+    summary: 'Crear pedido manualmente desde el CMS (casos excepcionales)',
+    description:
+      'Solo para pedidos telefónicos o correcciones administrativas.',
+  })
+  createOrderFromAdmin(
+    @Body() dto: CreateOrderDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.ordersService.createOrder(dto, admin.sub);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // COLECCIÓN — rutas sin parámetro dinámico
-  // IMPORTANTE: todas estas rutas deben declararse ANTES de /:id
+  // COLECCIÓN DE PEDIDOS (ADMIN)
   // ═══════════════════════════════════════════════════════════
 
   @Get()
-  @Roles(
-    AdminRole.SUPER_ADMIN,
-    AdminRole.ADMIN,
-    AdminRole.EDITOR,
-    AdminRole.VIEWER,
-  )
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.VIEWER)
   @ApiBearerAuth('access-token')
   @ResponseMessage('Pedidos obtenidos exitosamente')
-  @ApiOperation({ summary: 'Listar pedidos con filtros y paginación (Admin)' })
+  @ApiOperation({ summary: 'Listar pedidos con filtros y paginación' })
   findAll(@Query() query: QueryOrderDto) {
     return this.ordersService.findAllOrders(query);
   }
 
-  @Get('my')
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Pedidos obtenidos exitosamente')
-  @ApiOperation({ summary: 'Historial de pedidos del cliente autenticado' })
-  findMyOrders(
-    @CurrentUser() customer: CustomerJwtPayload,
-    @Query() query: QueryOrderDto,
-  ) {
-    return this.ordersService.findMyOrders(customer.sub, query);
-  }
-
-  // ──────────────────────────────────────────────────────────
-  // GET /orders/claims — listado de todas las reclamaciones (Admin)
-  //
-  // Esta ruta DEBE estar antes de GET /orders/:id para que NestJS
-  // no intente parsear "claims" como un UUID.
-  // ──────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+  // RECLAMOS (OrderClaim) — RUTAS DE COLECCIÓN PRIMERO
+  // ═══════════════════════════════════════════════════════════
 
   @Get('claims')
-  @Roles(
-    AdminRole.SUPER_ADMIN,
-    AdminRole.ADMIN,
-    AdminRole.EDITOR,
-    AdminRole.VIEWER,
-  )
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.VIEWER)
   @ApiBearerAuth('access-token')
-  @ResponseMessage('Reclamaciones obtenidas exitosamente')
-  @ApiOperation({
-    summary: 'Listar todas las reclamaciones — Admin',
-    description:
-      'Devuelve todas las reclamaciones (CANCELLATION, REFUND, REPLACEMENT) ' +
-      'de todos los pedidos, con paginación y filtros por estado/tipo/búsqueda.',
-  })
-  @ApiOkResponse({ description: 'Lista paginada de reclamaciones' })
+  @ResponseMessage('Reclamos obtenidos exitosamente')
+  @ApiOperation({ summary: 'Listar todos los reclamos' })
   findAllClaims(@Query() query: QueryClaimDto) {
-    return this.orderClaimsService.findAll(query);
+    return this.claimsService.findAll(query);
   }
 
-  @Get('number/:orderNumber')
-  @Roles(
-    AdminRole.SUPER_ADMIN,
-    AdminRole.ADMIN,
-    AdminRole.EDITOR,
-    AdminRole.VIEWER,
-  )
+  // ═══════════════════════════════════════════════════════════
+  // RECLAMOS — RUTAS CON PARÁMETRO :claimId
+  // ═══════════════════════════════════════════════════════════
+
+  @Patch('admin/claims/:claimId/register-return-shipment')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiBearerAuth('access-token')
-  @ResponseMessage('Pedido obtenido exitosamente')
-  @ApiOperation({ summary: 'Obtener pedido por número (Admin)' })
-  @ApiParam({ name: 'orderNumber', example: 'ORD-20250418-0001' })
-  findByNumber(@Param('orderNumber') orderNumber: string) {
-    return this.ordersService.findOrderByNumber(orderNumber);
+  @ResponseMessage('Envío de devolución registrado exitosamente')
+  @ApiOperation({
+    summary: 'Registrar datos de envío de retorno (admin)',
+    description:
+      'El admin registra el tracking y voucher cuando el cliente confirma el envío.',
+  })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
+  registerReturnShipment(
+    @Param('claimId', ParseUUIDPipe) claimId: string,
+    @Body() dto: ConfirmReturnShipmentDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.claimsService.registerReturnShipment(claimId, dto, admin.sub);
   }
-
-  // ──────────────────────────────────────────────────────────
-  // PATCH /orders/claims/:claimId/review
-  // Debe estar aquí (antes de /:id) porque NestJS procesa las
-  // rutas en orden de declaración.
-  // ──────────────────────────────────────────────────────────
 
   @Patch('claims/:claimId/review')
   @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiBearerAuth('access-token')
-  @ResponseMessage('Reclamación revisada')
+  @ResponseMessage('Reclamo revisado exitosamente')
   @ApiOperation({
-    summary: 'Aprobar o rechazar una reclamación (Admin)',
+    summary: 'Aprobar o rechazar un reclamo',
     description:
-      'Solo acepta action=APPROVED o action=REJECTED. ' +
-      'CANCELLED/COMPLETED/RECEIVED son gestionados automáticamente por el sistema. ' +
-      'reviewNote es OBLIGATORIO al rechazar.',
+      'APPROVED para CANCELLATION: se procesa inmediatamente. ' +
+      'APPROVED para REFUND/REPLACEMENT: pasa a espera de recepción del producto. ' +
+      'REJECTED: requiere reviewNote obligatorio.',
   })
-  @ApiParam({ name: 'claimId', description: 'UUID de la reclamación' })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
   reviewClaim(
     @Param('claimId', ParseUUIDPipe) claimId: string,
     @Body() dto: ReviewClaimDto,
     @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.orderClaimsService.reviewClaim(claimId, dto, admin.sub);
+    return this.claimsService.reviewClaim(claimId, dto, admin.sub);
+  }
+
+  @Patch('claims/:claimId/received')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Recepción del producto registrada')
+  @ApiOperation({
+    summary: 'Confirmar que se recibió el producto devuelto',
+    description:
+      'Registra el estado del producto (RESELLABLE restaura stock; DAMAGED/DESTROYED no). ' +
+      'Solo aplica a reclamos REFUND y REPLACEMENT.',
+  })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
+  markClaimReceived(
+    @Param('claimId', ParseUUIDPipe) claimId: string,
+    @Body() dto: MarkClaimReceivedDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.claimsService.markClaimReceived(claimId, dto, admin.sub);
+  }
+
+  @Patch('claims/:claimId/complete-refund')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Reembolso completado exitosamente')
+  @ApiOperation({
+    summary: 'Procesar el reembolso de un reclamo REFUND',
+    description:
+      'Crea el registro Refund, actualiza el estado del reclamo a COMPLETED. ' +
+      'Si es reembolso total, la orden pasa a estado "refunded".',
+  })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
+  completeRefund(
+    @Param('claimId', ParseUUIDPipe) claimId: string,
+    @Body() dto: CompleteRefundDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.refundService.processClaimRefund(claimId, dto, admin.sub);
+  }
+
+  @Patch('claims/:claimId/complete-replacement')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Orden de reemplazo generada exitosamente')
+  @ApiOperation({
+    summary: 'Generar orden de reemplazo para un reclamo REPLACEMENT',
+    description:
+      'Crea la orden de reemplazo en estado "processing", decrementa el stock ' +
+      'y vincula la orden al reclamo. La nueva orden sigue el flujo normal de envío.',
+  })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
+  completeReplacement(
+    @Param('claimId', ParseUUIDPipe) claimId: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.claimsService.completeReplacement(claimId, admin.sub);
+  }
+
+  @Patch('claims/:claimId/cancel')
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Reclamo cancelado exitosamente')
+  @ApiOperation({
+    summary: 'Cancelar reclamo propio (cliente)',
+    description:
+      'El cliente autenticado puede cancelar su propio reclamo si está en estado PENDING.',
+  })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
+  cancelClaim(
+    @Param('claimId', ParseUUIDPipe) claimId: string,
+    @CurrentUser() customer: CustomerJwtPayload,
+  ) {
+    return this.claimsService.cancelClaim(claimId, customer.sub);
+  }
+
+  @Delete('claims/:claimId')
+  @Roles(AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reclamo eliminado exitosamente')
+  @ApiOperation({
+    summary: 'Eliminar reclamo (solo SUPER_ADMIN)',
+    description:
+      'Hard delete de un reclamo finalizado. Solo permitido si el estado es CANCELLED o REJECTED. Los reclamos activos conservan trazabilidad de auditoría.',
+  })
+  @ApiParam({ name: 'claimId', description: 'UUID del reclamo' })
+  deleteClaim(@Param('claimId', ParseUUIDPipe) claimId: string) {
+    return this.claimsService.deleteClaim(claimId);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // RUTAS CON :id — AL FINAL para evitar colisiones
+  // RECLAMOS — RUTAS ANIDADAS AL PEDIDO
+  // ═══════════════════════════════════════════════════════════
+
+  // @Post(':orderId/claims')
+  // @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  // @ApiBearerAuth('access-token')
+  // @ResponseMessage('Reclamo creado exitosamente')
+  // @ApiOperation({
+  //   summary: 'Crear reclamo desde el CMS en nombre del cliente',
+  //   description:
+  //     'El customerId se resuelve automáticamente desde el pedido. ' +
+  //     'Solo disponible para pedidos de clientes registrados (no guests).',
+  // })
+  // @ApiParam({ name: 'orderId', description: 'UUID del pedido' })
+  // createClaim(
+  //   @Param('orderId', ParseUUIDPipe) orderId: string,
+  //   @Body() dto: CreateOrderClaimDto,
+  // ) {
+  //   return this.claimsService.createClaimAsAdmin(orderId, dto);
+  // }
+
+  @Post('admin/:orderId/claims')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token') // ← Token de ADMIN
+  @ResponseMessage('Reclamo creado exitosamente desde CMS')
+  @ApiOperation({
+    summary: 'Crear reclamo desde el CMS en nombre del cliente',
+    description:
+      'El customerId se resuelve automáticamente desde el pedido. ' +
+      'Solo disponible para pedidos de clientes registrados (no guests).',
+  })
+  @ApiParam({ name: 'orderId', description: 'UUID del pedido' })
+  createClaimFromAdmin(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: CreateOrderClaimDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.claimsService.createClaimAsAdmin(orderId, dto, admin.sub);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // DETALLE DEL PEDIDO (AL FINAL PARA NO COLISIONAR)
   // ═══════════════════════════════════════════════════════════
 
   @Get(':id')
-  @Roles(
-    AdminRole.SUPER_ADMIN,
-    AdminRole.ADMIN,
-    AdminRole.EDITOR,
-    AdminRole.VIEWER,
-  )
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.VIEWER)
   @ApiBearerAuth('access-token')
   @ResponseMessage('Pedido obtenido exitosamente')
-  @ApiOperation({ summary: 'Obtener pedido por UUID (Admin)' })
-  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Obtener detalle completo de un pedido' })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.findOrderById(id);
   }
 
-  @Get('my/:id')
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Pedido obtenido exitosamente')
-  @ApiOperation({ summary: 'Detalle de un pedido del cliente autenticado' })
-  @ApiParam({ name: 'id' })
-  findOneMyOrder(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() customer: CustomerJwtPayload,
-  ) {
-    return this.ordersService.findMyOrderById(id, customer.sub);
-  }
+  // ═══════════════════════════════════════════════════════════
+  // FLUJO DE ESTADOS — BOTONES DEL CMS
+  // ═══════════════════════════════════════════════════════════
 
-  @Patch(':id/status')
-  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Estado del pedido actualizado exitosamente')
-  @ApiOperation({
-    summary: 'Actualizar estado / notas del pedido (Admin)',
-    description:
-      'Transiciones: pending_payment→[paid,cancelled] | ' +
-      'paid→[processing,cancelled,refunded] | processing→[shipped,cancelled] | ' +
-      'shipped→[delivered] | delivered→[refunded].',
-  })
-  @ApiParam({ name: 'id' })
-  updateStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateOrderDto,
-    @CurrentUser() admin: AdminJwtPayload,
-  ) {
-    return this.ordersService.updateOrderStatus(id, dto, admin.sub);
-  }
-
-  // ── Reclamaciones del cliente (por pedido) ────────────────
-
-  @Post(':id/claims')
-  @ApiBearerAuth('access-token')
-  @ResponseMessage('Reclamación enviada correctamente')
-  @ApiOperation({
-    summary: 'Crear reclamación sobre un pedido (cliente)',
-    description:
-      'El cliente solo puede reclamar sobre sus propios pedidos. ' +
-      'CANCELLATION: antes del envío. REFUND/REPLACEMENT: tras el envío.',
-  })
-  @ApiParam({ name: 'id', description: 'UUID del pedido' })
-  createClaim(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CreateOrderClaimDto,
-    @CurrentUser() user: CustomerJwtPayload,
-  ) {
-    return this.orderClaimsService.createClaim(user.sub, id, dto);
-  }
-
-  @Delete(':id/claims/:claimId')
-  @ApiBearerAuth('access-token')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Reclamación cancelada')
-  @ApiOperation({ summary: 'Cancelar reclamación propia PENDING (cliente)' })
-  @ApiParam({ name: 'id', description: 'UUID del pedido' })
-  @ApiParam({ name: 'claimId', description: 'UUID de la reclamación' })
-  cancelClaim(
-    @Param('claimId', ParseUUIDPipe) claimId: string,
-    @CurrentUser() user: CustomerJwtPayload,
-  ) {
-    return this.orderClaimsService.cancelClaim(claimId, user.sub);
-  }
-
-  // ── Reembolsos ────────────────────────────────────────────
-
-  @Post(':id/refunds')
+  @Patch(':id/confirm-payment')
   @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiBearerAuth('access-token')
-  @ResponseMessage('Reembolso creado exitosamente')
-  @ApiOperation({ summary: 'Procesar un reembolso directo (Admin)' })
-  @ApiParam({ name: 'id' })
-  createRefund(
+  @ResponseMessage('Pago confirmado exitosamente')
+  @ApiOperation({
+    summary: 'Confirmar pago manual (YAPE/PLIN/Transferencia)',
+    description:
+      'Marca el pedido como pagado registrando el número de operación. ' +
+      'Solo aplica para métodos de pago manuales (wallet, cash_code). ' +
+      'Los pagos con tarjeta se confirman automáticamente por la pasarela.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  confirmPayment(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CreateRefundDto,
+    @Body() dto: ConfirmManualPaymentDto,
     @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.orderRefundService.createRefund(id, dto, admin.sub);
+    return this.paymentConfirmationService.confirmPayment(id, dto, admin.sub);
   }
 
-  @Get(':id/refunds')
-  @Roles(
-    AdminRole.SUPER_ADMIN,
-    AdminRole.ADMIN,
-    AdminRole.EDITOR,
-    AdminRole.VIEWER,
-  )
+  @Patch(':id/mark-processing')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiBearerAuth('access-token')
-  @ResponseMessage('Reembolsos obtenidos exitosamente')
-  @ApiOperation({ summary: 'Ver historial de reembolsos del pedido (Admin)' })
-  @ApiParam({ name: 'id' })
-  getRefundsByOrder(@Param('id', ParseUUIDPipe) id: string) {
-    return this.orderRefundService.getRefundsByOrder(id);
+  @ResponseMessage('Pedido en preparación')
+  @ApiOperation({
+    summary: 'Marcar pedido como en preparación',
+    description: 'Transición paid → processing. No requiere datos adicionales.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  markProcessing(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.ordersService.markAsProcessing(id, admin.sub);
   }
 
-  // ── Logística ─────────────────────────────────────────────
+  @Patch(':id/cancel')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Pedido cancelado')
+  @ApiOperation({
+    summary: 'Cancelar pedido',
+    description:
+      'Cancela el pedido restaurando el stock. ' +
+      'Solo permitido desde pending_payment, paid o processing. ' +
+      'Para pedidos shipped o delivered, usar el flujo de reclamos.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  cancelOrder(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelOrderDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.ordersService.cancelOrder(id, dto, admin.sub);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // LOGÍSTICA
+  // ═══════════════════════════════════════════════════════════
 
   @Patch(':id/logistics/shipped')
-  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.EDITOR)
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
   @ApiBearerAuth('access-token')
-  @ResponseMessage('Pedido marcado como despachado')
+  @ResponseMessage('Pedido marcado como enviado')
   @ApiOperation({
-    summary:
-      'Despachar pedido — actualizar logística y cambiar estado a Shipped (Admin)',
+    summary: 'Marcar pedido como enviado',
     description:
-      'COURIER: requiere courierName, trackingNumber y foto de guía en tempImageIds. ' +
-      'LOCAL_MOTORIZED: solo requiere deliveryType; registrar internalTransportCost para el motorizado.',
+      'Transición processing → shipped. Registra datos logísticos y evidencia de despacho.',
   })
-  @ApiParam({ name: 'id' })
-  updateToShippedLogistics(
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  markShipped(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLogisticsDto,
     @CurrentUser() admin: AdminJwtPayload,
   ) {
-    return this.orderLogisticsService.updateToShipped(id, dto, admin.sub);
+    return this.logisticsService.updateToShipped(id, dto, admin.sub);
+  }
+
+  @Patch(':id/logistics/delivered')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Pedido marcado como entregado')
+  @ApiOperation({
+    summary: 'Marcar pedido como entregado',
+    description:
+      'Transición shipped → delivered. Registra evidencia fotográfica. ' +
+      'Para contraentrega, registra el monto cobrado.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  markDelivered(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MarkDeliveredDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.logisticsService.markAsDelivered(id, dto, admin.sub);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // REEMBOLSOS
+  // ═══════════════════════════════════════════════════════════
+
+  @Post(':orderId/refunds')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Reembolso creado exitosamente')
+  @ApiOperation({ summary: 'Crear reembolso directo sin reclamo previo' })
+  @ApiParam({ name: 'orderId', description: 'UUID del pedido' })
+  createRefund(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: CreateRefundDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.refundService.createRefund(orderId, dto, admin.sub);
+  }
+
+  @Get(':orderId/refunds')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.VIEWER)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Reembolsos obtenidos exitosamente')
+  @ApiOperation({ summary: 'Historial de reembolsos de un pedido' })
+  @ApiParam({ name: 'orderId', description: 'UUID del pedido' })
+  getRefunds(@Param('orderId', ParseUUIDPipe) orderId: string) {
+    return this.refundService.getRefundsByOrder(orderId);
+  }
+
+  @Patch('refunds/:refundId/process')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Reembolso procesado exitosamente')
+  @ApiOperation({ summary: 'Procesar un reembolso pendiente' })
+  @ApiParam({ name: 'refundId', description: 'UUID del reembolso' })
+  processRefund(
+    @Param('refundId', ParseUUIDPipe) refundId: string,
+    @Body() dto: CompleteRefundDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.refundService.processRefund(refundId, dto, admin.sub);
   }
 }

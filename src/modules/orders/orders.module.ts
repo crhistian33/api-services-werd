@@ -7,6 +7,8 @@ import { MailModule } from '../mail/mail.module';
 import { OrderClaimsService } from './service/order-claims.service';
 import { OrderLogisticsService } from './service/order-logistics.service';
 import { OrderRefundService } from './service/order-refund.service';
+import { OrderPaymentConfirmationService } from './service/order-payment-confirmation.service';
+import { OrderPaymentExpiryService } from './service/order-payment-expiry.service';
 
 @Module({
   imports: [PrismaModule, ImagesModule, MailModule],
@@ -16,6 +18,8 @@ import { OrderRefundService } from './service/order-refund.service';
     OrderClaimsService,
     OrderLogisticsService,
     OrderRefundService,
+    OrderPaymentConfirmationService,
+    OrderPaymentExpiryService,
   ],
   exports: [OrdersService],
 })

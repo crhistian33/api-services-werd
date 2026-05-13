@@ -34,6 +34,7 @@ export interface ImageDto {
   id: string;
   imageRole: string;
   url: string | null;
+  entityId: string;
   altText: string | null;
   order: number;
   variants: ImageVariants;
@@ -229,6 +230,7 @@ export class ImageRecordService {
       orderBy: [{ imageRole: 'asc' }, { order: 'asc' }],
       select: {
         id: true,
+        entityId: true,
         imageRole: true,
         url: true,
         altText: true,
@@ -547,6 +549,7 @@ export class ImageRecordService {
 
   private mapImageToDto(img: {
     id: string;
+    entityId: string;
     imageRole: string;
     url: string | null;
     altText: string | null;
@@ -560,6 +563,7 @@ export class ImageRecordService {
 
     return {
       id: img.id,
+      entityId: img.entityId,
       imageRole: img.imageRole,
       url: img.url,
       altText: img.altText,
@@ -567,5 +571,32 @@ export class ImageRecordService {
       variants: meta?.variants ?? {},
       isSvg: meta?.format === 'svg',
     };
+  }
+
+  // image-record.service.ts
+
+  async getEntitiesImages(
+    entityType: ImageEntityType,
+    entityIds: string[],
+  ): Promise<ImageDto[]> {
+    const images = await this.prisma.image.findMany({
+      where: {
+        entityType,
+        entityId: { in: entityIds },
+        isConfirmed: true,
+      },
+      orderBy: [{ imageRole: 'asc' }, { order: 'asc' }],
+      select: {
+        id: true,
+        entityId: true, // ✅ Necesario para agrupar
+        imageRole: true,
+        url: true,
+        altText: true,
+        order: true,
+        metadata: true,
+      },
+    });
+
+    return images.map((img) => this.mapImageToDto(img));
   }
 }

@@ -3,14 +3,13 @@ import {
   IsArray,
   IsEnum,
   IsInt,
-  IsNumber,
   IsOptional,
   IsPositive,
   IsString,
   IsUUID,
   ArrayMinSize,
-  Min,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -55,6 +54,11 @@ export class CreateOrderClaimDto {
   @IsString()
   description: string;
 
+  @ApiPropertyOptional({ description: 'Notas internas del admin' })
+  @IsOptional()
+  @IsString()
+  adminNotes?: string;
+
   @ApiProperty({
     type: [ClaimItemDto],
     description: 'Ítems a reclamar (mínimo 1)',
@@ -74,16 +78,51 @@ export class CreateOrderClaimDto {
   @IsUUID('4', { each: true })
   tempImageIds?: string[];
 
+  // @ApiPropertyOptional({
+  //   description:
+  //     'Monto que el cliente pagó para enviar el producto de retorno. ' +
+  //     'Solo aplica en PRODUCT_FAULT o STORE_ERROR cuando la tienda asume ese gasto.',
+  // })
+  // @IsOptional()
+  // @IsNumber()
+  // @Min(0)
+  // @Type(() => Number)
+  // customerVoucherAmount?: number;
+
   @ApiPropertyOptional({
-    description:
-      'Monto que el cliente pagó para enviar el producto de retorno. ' +
-      'Solo aplica en PRODUCT_FAULT o STORE_ERROR cuando la tienda asume ese gasto.',
+    description: 'Notas internas del admin (no visibles al cliente)',
   })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  customerVoucherAmount?: number;
+  @IsString()
+  internalNote?: string;
+
+  // ✅ NUEVOS CAMPOS PARA CMS
+  @ApiPropertyOptional({
+    description:
+      'Si es true, el reclamo se aprueba automáticamente. Solo para uso desde CMS.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoApprove?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Nota de aprobación automática (visible al cliente)',
+  })
+  @IsOptional()
+  @IsString()
+  autoApproveNote?: string;
+
+  // ✅ Nuevos campos para reembolso
+  @ApiPropertyOptional({ description: 'Método de reembolso preferido' })
+  @IsOptional()
+  @IsString()
+  refundMethod?: string;
+
+  @ApiPropertyOptional({ description: 'Datos para el reembolso' })
+  @IsOptional()
+  @IsString()
+  refundAccountDetails?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
