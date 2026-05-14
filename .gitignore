@@ -62,3 +62,11 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated
+
+# Uploads
+/uploads/temp/*
+/uploads/images/*
+
+# Mantener carpetas vacías
+!/uploads/temp/.gitkeep
+!/uploads/images/.gitkeep
