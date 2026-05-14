@@ -13,7 +13,11 @@ async function bootstrap() {
   app.use(cookieParser());
 
   app.enableCors({
-    origin: true,
+    origin: [
+      'https://admin-werd.vercel.app',
+      'https://e-werd.vercel.app',
+      'http://localhost:4200',
+    ],
     credentials: true,
   });
 
