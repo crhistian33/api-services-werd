@@ -53,14 +53,13 @@ export class SiteConfigService implements OnModuleInit {
     return config.id;
   }
 
-  // ═══════════════════════════════════════════════
-  // get
-  // ═══════════════════════════════════════════════
-
-  async get() {
+  async getConfig(onlyActiveSocialLinks = false) {
     const config = await this.prisma.siteConfig.findFirst({
       include: {
-        socialLinks: { orderBy: { sortOrder: 'asc' } },
+        socialLinks: {
+          where: onlyActiveSocialLinks ? { isActive: true } : undefined,
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
     if (!config) {
@@ -69,38 +68,12 @@ export class SiteConfigService implements OnModuleInit {
     return this.imageRecord.attachImagesToEntity(config, ENTITY_TYPE);
   }
 
-  // ═══════════════════════════════════════════════
-  // getPublic
-  // ═══════════════════════════════════════════════
+  async get() {
+    return this.getConfig(false);
+  }
 
   async getPublic() {
-    const config = await this.prisma.siteConfig.findFirst({
-      select: {
-        id: true,
-        storeName: true,
-        metaTitle: true,
-        metaDescription: true,
-        googleAnalyticsId: true,
-        facebookPixelId: true,
-        phonePrimary: true,
-        whatsappNumber: true,
-        address: true,
-        socialLinks: {
-          where: { isActive: true },
-          orderBy: { sortOrder: 'asc' },
-          select: {
-            network: true,
-            name: true,
-            icon: true,
-            url: true,
-          },
-        },
-      },
-    });
-    if (!config) {
-      throw new NotFoundException('Configuración del sitio no encontrada');
-    }
-    return this.imageRecord.attachImagesToEntity(config, ENTITY_TYPE);
+    return this.getConfig(true);
   }
 
   // ═══════════════════════════════════════════════

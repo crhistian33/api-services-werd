@@ -62,6 +62,14 @@ export class CategoriesController {
     return this.categoriesService.findCategoryBySlug(slug);
   }
 
+  @Public()
+  @Get('public')
+  @ResponseMessage('Lista de categorías obtenida')
+  @ApiOperation({ summary: 'Listado público de categorías' })
+  findAllPublic(@Query() query: QueryCategoryDto) {
+    return this.categoriesService.findAllCategoriesPublic(query);
+  }
+
   // ═══════════════════════════════════════════════
   // BULK (ANTES DE :id)
   // ═══════════════════════════════════════════════

@@ -95,6 +95,34 @@ export class CategoriesService extends SluggableService<
     };
   }
 
+  async findAllCategoriesPublic(query: QueryCategoryDto) {
+    const { search, parentId, page, limit } = query;
+
+    const result = await this.findAll({
+      where: {
+        isActive: true,
+        ...(parentId !== undefined && { parentId: parentId ?? null }),
+        ...(search !== undefined && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        parent: { select: { id: true, name: true, slug: true } },
+        _count: { select: { children: true, products: true } },
+      },
+      pagination: { page, limit },
+    });
+
+    return {
+      ...result,
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+    };
+  }
+
   // ═══════════════════════════════════════════════
   // findCategoryById
   // ═══════════════════════════════════════════════
