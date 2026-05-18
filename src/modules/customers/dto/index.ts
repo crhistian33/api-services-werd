@@ -7,3 +7,4 @@ export * from './verify-email-customer.dto';
 export * from './create-customer-address.dto';
 export * from './update-customer-address.dto';
 export * from './refund-request.dto';
+export * from './update-password-admin.dto';

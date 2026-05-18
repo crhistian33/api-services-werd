@@ -87,6 +87,17 @@ export class OrdersController {
     return this.claimsService.confirmClaimShipment(claimId, dto, customer.sub);
   }
 
+  @Get('me')
+  @ApiBearerAuth('access-token') // ← Token de CUSTOMER
+  @ResponseMessage('Mis pedidos obtenidos exitosamente')
+  @ApiOperation({ summary: 'Obtener pedidos del cliente autenticado' })
+  getMyOrders(
+    @CurrentUser() customer: CustomerJwtPayload,
+    @Query() query: QueryOrderDto,
+  ) {
+    return this.ordersService.findMyOrders(customer.sub, query);
+  }
+
   @Post(':orderId/claims')
   @ApiBearerAuth('access-token') // ← Token de CUSTOMER (no admin)
   @ResponseMessage('Reclamo creado exitosamente')
@@ -155,6 +166,19 @@ export class OrdersController {
   @ApiOperation({ summary: 'Listar pedidos con filtros y paginación' })
   findAll(@Query() query: QueryOrderDto) {
     return this.ordersService.findAllOrders(query);
+  }
+
+  @Get('customer/:customerId')
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.VIEWER)
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Pedidos del cliente obtenidos exitosamente')
+  @ApiOperation({ summary: 'Obtener pedidos de un cliente específico' })
+  @ApiParam({ name: 'customerId', description: 'UUID del cliente' })
+  findByCustomer(
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+    @Query() query: QueryOrderDto,
+  ) {
+    return this.ordersService.findMyOrders(customerId, query);
   }
 
   // ═══════════════════════════════════════════════════════════

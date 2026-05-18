@@ -3,7 +3,6 @@ import {
   Get,
   Post,
   Patch,
-  Delete,
   Body,
   Param,
   Query,
@@ -24,6 +23,7 @@ import {
   ForgotPasswordDto,
   CreateCustomerAddressDto,
   UpdateCustomerAddressDto,
+  UpdatePasswordAsAdminDto,
 } from '../dto';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -114,6 +114,15 @@ export class CustomersController {
     @Body() dto: UpdateCustomerAddressDto,
   ) {
     return this.customersService.updateAddress(user.sub, addressId, dto);
+  }
+
+  @Patch('me/addresses/:addressId/default')
+  @ApiBearerAuth('access-token')
+  setMyDefaultAddress(
+    @CurrentUser() user: AuthAccessPayload,
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+  ) {
+    return this.customersService.setDefaultAddress(user.sub, addressId);
   }
 
   // --- Reembolsos (Lado Cliente) ---
@@ -213,10 +222,53 @@ export class CustomersController {
     return this.customersService.update(id, dto);
   }
 
-  @Delete(':id')
-  @Roles(AdminRole.SUPER_ADMIN)
+  @Patch(':id/password')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
   @ApiBearerAuth('access-token')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.customersService.remove(id);
+  updateCustomerPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePasswordAsAdminDto,
+  ) {
+    return this.customersService.updatePasswordAsAdmin(id, dto.newPassword);
+  }
+
+  @Patch(':id/addresses/:addressId/default')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  setDefaultAddress(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+  ) {
+    return this.customersService.setDefaultAddress(id, addressId);
+  }
+
+  @Patch(':id/soft-delete')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  softDelete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.customersService.softDeleteCustomer(id, admin.sub);
+  }
+
+  @Patch(':id/restore')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.customersService.restoreCustomer(id, admin.sub);
+  }
+
+  @Patch('bulk/restore')
+  @Roles(AdminRole.ADMIN, AdminRole.SUPER_ADMIN)
+  @ApiBearerAuth('access-token')
+  restoreMany(
+    @Body() dto: BulkSoftDeleteCustomerDto,
+    @CurrentUser() admin: AdminJwtPayload,
+  ) {
+    return this.customersService.restoreCustomers(dto.ids, admin.sub);
   }
 }

@@ -213,6 +213,21 @@ export class CustomersService extends BaseService<
     });
   }
 
+  async updatePasswordAsAdmin(id: string, newPassword: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id } });
+
+    if (!customer) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+
+    return this.prisma.customer.update({
+      where: { id },
+      data: { passwordHash: newPasswordHash },
+    });
+  }
+
   async resetPassword(dto: ForgotPasswordResetDto) {
     const verification = await this.prisma.customerVerificationCode.findFirst({
       where: {

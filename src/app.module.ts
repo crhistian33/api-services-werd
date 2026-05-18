@@ -23,6 +23,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { MailModule } from './modules/mail/mail.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { NewsletterModule } from './modules/newsletter/newsletter.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     MailModule,
     OrdersModule,
     DashboardModule,
+    NewsletterModule,
   ],
   controllers: [AppController],
   providers: [AppService],
