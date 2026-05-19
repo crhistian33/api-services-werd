@@ -51,6 +51,14 @@ export class CustomersController {
     return this.customersService.register(dto);
   }
 
+  @Post('resend-verification')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Código reenviado exitosamente')
+  async resendVerification(@Body() dto: { email: string }) {
+    return this.customersService.resendVerificationCode(dto.email);
+  }
+
   @Post('verify-email')
   @Public()
   @HttpCode(HttpStatus.OK)

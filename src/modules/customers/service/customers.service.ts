@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   Logger,
+  InternalServerErrorException,
 } from '@nestjs/common';
 
 import * as bcrypt from 'bcrypt';
@@ -302,6 +303,70 @@ export class CustomersService extends BaseService<
     return {
       message:
         'Si el correo está registrado, se enviará un código de verificación.',
+    };
+  }
+
+  // ═══════════════════════════════════════════════
+  // PUBLIC: Reenviar Código de Verificación
+  // ═══════════════════════════════════════════════
+  async resendVerificationCode(email: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { email },
+    });
+
+    // Por seguridad (anti-enumeración de usuarios), si no existe,
+    // respondemos un éxito genérico para no dar pistas a atacantes.
+    if (!customer) {
+      return {
+        message: 'Si el correo está registrado, se enviará un nuevo código.',
+      };
+    }
+
+    if (customer.emailVerifiedAt) {
+      throw new BadRequestException(
+        'Este correo electrónico ya se encuentra verificado',
+      );
+    }
+
+    // Generar nuevo código de 6 dígitos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+
+    // Usamos una transacción para limpiar códigos viejos y crear el nuevo
+    await this.prisma.$transaction(async (tx) => {
+      // Eliminar códigos anteriores para este cliente si existieran
+      await tx.customerVerificationCode.deleteMany({
+        where: { customerId: customer.id },
+      });
+
+      // Crear el nuevo código activo
+      await tx.customerVerificationCode.create({
+        data: {
+          code,
+          email: customer.email,
+          expiresAt,
+          customerId: customer.id,
+        },
+      });
+    });
+
+    // Aquí SÍ usamos await. Si el proveedor de correos falla,
+    // saltará al catch del controlador y enviará un Error 500 al frontend.
+    try {
+      await this.mailService.sendVerificationEmail(customer.email, code);
+    } catch (error) {
+      this.logger.error(
+        `[RESEND FAILED] No se pudo enviar el correo a ${customer.email}. Código en DB: ${code}`,
+        error,
+      );
+      throw new InternalServerErrorException(
+        'No se pudo enviar el correo electrónico en este momento. Por favor, inténtelo más tarde.',
+      );
+    }
+
+    return {
+      message: 'Si el correo está registrado, se enviará un nuevo código.',
     };
   }
 
