@@ -8,6 +8,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import {
@@ -22,6 +23,7 @@ import { LoginDto } from '../dto/login.dto';
 import { Public } from '../../../common/decorators/public.decorator';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import type { CustomerJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import { RefreshCookieGuard } from '../guards/refresh-cookie.guard';
 
 @ApiTags('Customer Auth')
 @Controller('auth/customer')
@@ -70,6 +72,8 @@ export class CustomerAuthController {
   // LOGOUT
   // ═══════════════════════════════════════════════
 
+  @Public()
+  @UseGuards(RefreshCookieGuard)
   @Post('logout')
   @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.OK)
