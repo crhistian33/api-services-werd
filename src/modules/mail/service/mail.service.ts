@@ -1,5 +1,5 @@
 import { MailerService } from '@nestjs-modules/mailer';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CLAIM_TYPE_LABELS,
@@ -7,7 +7,6 @@ import {
   REFUND_METHOD_LABELS,
 } from '../../orders/constants/order-labels.constants';
 import { RefundMethod, ClaimType } from 'generated/prisma/client';
-import * as nodemailer from 'nodemailer';
 
 // ─────────────────────────────────────────────────────────────
 // Contextos de templates — EXISTENTES
@@ -173,25 +172,10 @@ interface ClaimShipmentConfirmedContext {
 }
 @Injectable()
 export class MailService {
-  private readonly logger = new Logger(MailService.name);
-
   constructor(
     private readonly mailerService: MailerService,
     private readonly config: ConfigService,
-  ) {
-    // 🚀 Extraemos el transporter de forma segura utilizando el tipo nativo de Nodemailer
-    const transporter = this.mailerService
-      .mailerTransport as unknown as nodemailer.Transporter;
-
-    if (transporter && typeof transporter.set === 'function') {
-      transporter.set('options', {
-        ...transporter.options,
-        connectionTimeout: 10000,
-        socketTimeout: 10000,
-        dnsTimeout: 5000,
-      });
-    }
-  }
+  ) {}
 
   // ── URLs y datos configurables desde .env ──────────────────
   // STORE_FRONTEND_URL=https://tienda.werd.com
