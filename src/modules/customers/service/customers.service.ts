@@ -4,6 +4,7 @@ import {
   ConflictException,
   UnauthorizedException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 
 import * as bcrypt from 'bcrypt';
@@ -51,6 +52,7 @@ export class CustomersService extends BaseService<
   Prisma.CustomerWhereInput,
   Prisma.CustomerOrderByWithRelationInput
 > {
+  readonly logger = new Logger(CustomersService.name);
   protected override useSoftDelete = true;
   protected override nameField = 'email';
 
@@ -130,9 +132,13 @@ export class CustomersService extends BaseService<
       );
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
+    // Generación de código de 6 dígitos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
-    return this.prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.create({
+    const customer = await this.prisma.$transaction(async (tx) => {
+      const newCustomer = await tx.customer.create({
         data: {
           firstName: dto.firstName,
           lastName: dto.lastName,
@@ -141,11 +147,6 @@ export class CustomersService extends BaseService<
           passwordHash,
         },
       });
-
-      // Generación de código de 6 dígitos
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = new Date();
-      expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
       await tx.customerVerificationCode.create({
         data: {
@@ -156,11 +157,23 @@ export class CustomersService extends BaseService<
         },
       });
 
-      // Emitir evento para envío de correo
-      await this.mailService.sendVerificationEmail(customer.email, code);
-
-      return customer;
+      return newCustomer;
     });
+
+    // Emitir evento para envío de correo
+    this.mailService
+      .sendVerificationEmail(customer.email, code)
+      .catch((error) => {
+        // Registramos el error en los logs del servidor para auditoría,
+        // pero no interrumpimos la experiencia del usuario.
+        this.logger.error(
+          `Error enviando correo de verificación a ${customer.email}:`,
+          error,
+        );
+      });
+
+    // 4. Responder al Frontend de inmediato
+    return customer;
   }
 
   async verifyEmail(email: string, code: string) {
