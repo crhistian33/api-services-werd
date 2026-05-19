@@ -151,16 +151,16 @@ export class CustomersService extends BaseService<
       await tx.customerVerificationCode.create({
         data: {
           code,
-          email: customer.email,
+          email: newCustomer.email,
           expiresAt,
-          customerId: customer.id,
+          customerId: newCustomer.id,
         },
       });
 
       return newCustomer;
     });
 
-    // Emitir evento para envío de correo
+    // Emitir evento para envío de correo (Fuera de la transacción y sin await)
     this.mailService
       .sendVerificationEmail(customer.email, code)
       .catch((error) => {
