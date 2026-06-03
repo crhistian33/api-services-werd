@@ -212,9 +212,18 @@ export class MailService {
   // AUTENTICACIÓN
   // ═══════════════════════════════════════════════════════════
 
-  async sendVerificationEmail(email: string, code: string): Promise<void> {
-    await this.send(email, 'Verifica tu cuenta - Werd', './verification', {
+  async sendVerificationEmail(
+    email: string,
+    code: string,
+    isGuest: boolean = false,
+  ): Promise<void> {
+    const subject = isGuest
+      ? 'Código de verificación para tu pedido - Werd'
+      : 'Verifica tu cuenta - Werd';
+
+    await this.send(email, subject, './verification', {
       code,
+      isGuest,
     });
   }
 

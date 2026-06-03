@@ -55,8 +55,8 @@ export class CustomersController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Código reenviado exitosamente')
-  async resendVerification(@Body() dto: { email: string }) {
-    return this.customersService.resendVerificationCode(dto.email);
+  async resendVerification(@Body() dto: { email: string; isGuest?: boolean }) {
+    return this.customersService.resendVerificationCode(dto.email, dto.isGuest);
   }
 
   @Post('verify-email')
@@ -131,6 +131,15 @@ export class CustomersController {
     @Param('addressId', ParseUUIDPipe) addressId: string,
   ) {
     return this.customersService.setDefaultAddress(user.sub, addressId);
+  }
+
+  @Patch('me')
+  @ApiBearerAuth('access-token')
+  updateMe(
+    @CurrentUser() user: AuthAccessPayload,
+    @Body() dto: UpdateCustomerDto,
+  ) {
+    return this.customersService.update(user.sub, dto);
   }
 
   // --- Reembolsos (Lado Cliente) ---

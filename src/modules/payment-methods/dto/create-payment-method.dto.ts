@@ -18,8 +18,10 @@ export class CreatePaymentMethodDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ enum: ['card', 'wallet', 'cash_code', 'cash_on_delivery'] })
-  @IsEnum(['card', 'wallet', 'cash_code', 'cash_on_delivery'])
+  @ApiProperty({
+    enum: ['card', 'wallet', 'cash_code', 'cash_on_delivery', 'bank_transfer'],
+  })
+  @IsEnum(['card', 'wallet', 'cash_code', 'cash_on_delivery', 'bank_transfer'])
   type: PaymentMethodType;
 
   @ApiPropertyOptional({

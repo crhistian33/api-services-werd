@@ -6,6 +6,7 @@ import {
   IsString,
   MinLength,
   Matches,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateCustomerDto {
@@ -27,6 +28,13 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiProperty({ example: '12345678', required: false })
+  @IsOptional()
+  @IsString()
+  @MinLength(8, { message: 'El DNI debe tener al menos 8 caracteres' })
+  @MaxLength(8, { message: 'El DNI debe tener al menos 8 caracteres' })
+  dni?: string;
 
   @ApiProperty({
     example: 'Werd2026!',

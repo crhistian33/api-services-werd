@@ -119,35 +119,61 @@ export class ShippingZonesService extends BaseService<
     provinceId?: string,
     districtId?: string,
   ) {
-    // Busca la zona más específica primero (distrito → provincia → departamento)
-    const area = await this.prisma.shippingZoneArea.findFirst({
-      where: {
-        departmentId,
-        // Si hay distrito, busca exacto; si hay provincia, busca sin distrito
-        ...(districtId
-          ? { provinceId, districtId }
-          : provinceId
-            ? { provinceId, districtId: null }
-            : { provinceId: null, districtId: null }),
-        zone: { isActive: true, rates: { some: { isActive: true } } },
-      },
-      include: {
-        zone: {
-          include: {
-            rates: {
-              where: { isActive: true },
-              orderBy: { price: 'asc' },
-            },
+    const zoneCriteria = {
+      isActive: true,
+      rates: { some: { isActive: true } },
+    };
+    const zoneInclude = {
+      zone: {
+        include: {
+          rates: {
+            where: { isActive: true },
+            orderBy: { price: 'asc' as const },
           },
         },
       },
-      orderBy: {
-        // Prioriza el área más específica: con distrito > con provincia > solo depto
-        districtId: 'desc',
+    };
+
+    // 1. INTENTO 1: Buscar coincidencia exacta por Distrito (Máxima especificidad)
+    if (departmentId && provinceId && districtId) {
+      const areaDistrito = await this.prisma.shippingZoneArea.findFirst({
+        where: {
+          departmentId,
+          provinceId,
+          districtId,
+          zone: zoneCriteria,
+        },
+        include: zoneInclude,
+      });
+      if (areaDistrito?.zone) return areaDistrito.zone;
+    }
+
+    // 2. INTENTO 2: Fallback a nivel de Provincia (distrito configurado como NULL)
+    if (departmentId && provinceId) {
+      const areaProvincia = await this.prisma.shippingZoneArea.findFirst({
+        where: {
+          departmentId,
+          provinceId,
+          districtId: null, // Busca la zona global de la provincia
+          zone: zoneCriteria,
+        },
+        include: zoneInclude,
+      });
+      if (areaProvincia?.zone) return areaProvincia.zone;
+    }
+
+    // 3. INTENTO 3: Fallback a nivel de Departamento (provincia y distrito como NULL)
+    const areaDepartamento = await this.prisma.shippingZoneArea.findFirst({
+      where: {
+        departmentId,
+        provinceId: null,
+        districtId: null,
+        zone: zoneCriteria,
       },
+      include: zoneInclude,
     });
 
-    return area?.zone ?? null;
+    return areaDepartamento?.zone ?? null;
   }
 
   // ═══════════════════════════════════════════════

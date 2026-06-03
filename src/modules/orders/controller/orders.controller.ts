@@ -26,6 +26,7 @@ import { OrderLogisticsService } from '../service/order-logistics.service';
 import { OrderClaimsService } from '../service/order-claims.service';
 import { OrderRefundService } from '../service/order-refund.service';
 import { OrderPaymentConfirmationService } from '../service/order-payment-confirmation.service';
+import { CulqiService } from '../service/culqi.service';
 import {
   CreateOrderDto,
   QueryOrderDto,
@@ -37,6 +38,7 @@ import {
   ConfirmClaimShipmentDto,
   ConfirmReturnShipmentDto,
 } from '../dto';
+import { CompletePaymentDto } from '../dto/complete-payment.dto';
 import { ConfirmManualPaymentDto } from '../dto/confirm-payment.dto';
 import { MarkDeliveredDto } from '../dto/mark-delivered.dto';
 import { MarkClaimReceivedDto } from '../dto/mark-claim-received.dto';
@@ -61,6 +63,7 @@ export class OrdersController {
     private readonly claimsService: OrderClaimsService,
     private readonly refundService: OrderRefundService,
     private readonly paymentConfirmationService: OrderPaymentConfirmationService,
+    private readonly culqiService: CulqiService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -401,6 +404,41 @@ export class OrdersController {
     @CurrentUser() admin: AdminJwtPayload,
   ) {
     return this.paymentConfirmationService.confirmPayment(id, dto, admin.sub);
+  }
+
+  @Patch(':id/complete-payment')
+  @Public()
+  @ResponseMessage('Pago procesado exitosamente')
+  @ApiOperation({
+    summary: 'Completar pago con tarjeta (Culqi)',
+    description:
+      'Recibe el token de Culqi generado en el frontend, procesa el cargo ' +
+      'y actualiza el estado de la orden a "paid" si es exitoso.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  async completePayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompletePaymentDto,
+  ) {
+    // 1. Procesar el cargo en la pasarela
+    const charge = await this.culqiService.createCharge(
+      id,
+      dto.token,
+      dto.email,
+    );
+
+    // 2. Si es exitoso, confirmar el pedido internamente
+    await this.ordersService.handlePaymentConfirmed(
+      id,
+      charge.id,
+      charge as Record<string, unknown>,
+    );
+
+    return {
+      success: true,
+      message: 'Pago completado con éxito',
+      chargeId: charge.id,
+    };
   }
 
   @Patch(':id/mark-processing')

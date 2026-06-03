@@ -9,6 +9,7 @@ import { OrderLogisticsService } from './service/order-logistics.service';
 import { OrderRefundService } from './service/order-refund.service';
 import { OrderPaymentConfirmationService } from './service/order-payment-confirmation.service';
 import { OrderPaymentExpiryService } from './service/order-payment-expiry.service';
+import { CulqiService } from './service/culqi.service';
 
 @Module({
   imports: [PrismaModule, ImagesModule, MailModule],
@@ -20,6 +21,7 @@ import { OrderPaymentExpiryService } from './service/order-payment-expiry.servic
     OrderRefundService,
     OrderPaymentConfirmationService,
     OrderPaymentExpiryService,
+    CulqiService,
   ],
   exports: [OrdersService],
 })

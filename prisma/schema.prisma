@@ -466,6 +466,7 @@ model Customer {
   lastName        String
   email           String    @unique
   phone           String?
+  dni             String?   @unique
   passwordHash    String?
   googleId        String?   @unique
   emailVerifiedAt DateTime?
@@ -499,10 +500,10 @@ model CustomerVerificationCode {
   code       String
   email      String
   expiresAt  DateTime
-  customerId String
+  customerId String?
   createdAt  DateTime @default(now())
   
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([email])
   @@map("customer_verification_codes")

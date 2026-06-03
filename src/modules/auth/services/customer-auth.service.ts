@@ -73,6 +73,8 @@ export class CustomerAuthService {
         firstName: customer.firstName,
         lastName: customer.lastName,
         email: customer.email,
+        dni: customer.dni,
+        phone: customer.phone,
       },
     };
   }

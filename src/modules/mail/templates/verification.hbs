@@ -76,12 +76,19 @@
             <h1>Bienvenido a Werd</h1>
         </div>
         <div class="content">
-            <h2>Verifica tu correo electrónico</h2>
-            <p>Gracias por registrarte. Por favor, utiliza el siguiente código para verificar tu cuenta y comenzar a disfrutar de nuestra plataforma.</p>
+            {{#if isGuest}}
+                <h2>Verifica tu correo para procesar tu pedido</h2>
+                <p>Estás a un paso de completar tu compra. Por favor, utiliza el siguiente código de verificación para validar tu dirección de correo electrónico y continuar con tu orden.</p>
+            {{else}}
+                <h2>Verifica tu correo electrónico</h2>
+                <p>Gracias por registrarte. Por favor, utiliza el siguiente código para verificar tu cuenta y comenzar a disfrutar de nuestra plataforma.</p>
+            {{/if}}
+            
             <div class="code-container">
                 <p class="code">{{code}}</p>
             </div>
-            <p>Si no has creado una cuenta, puedes ignorar este correo con total seguridad.</p>
+            
+            <p>Si no has solicitado este código en Werd, puedes ignorar este correo con total seguridad.</p>
             <p class="expire-text">* Este código expirará en 15 minutos.</p>
         </div>
         <div class="footer">

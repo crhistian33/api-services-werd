@@ -186,10 +186,12 @@ export class CustomersService extends BaseService<
       throw new BadRequestException('Código inválido o expirado');
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.customer.update({
-        where: { id: verification.customerId },
-        data: { emailVerifiedAt: new Date() },
-      });
+      if (verification.customerId) {
+        await tx.customer.update({
+          where: { id: verification.customerId }, // Aquí TypeScript ya sabe al 100% que es un string puro
+          data: { emailVerifiedAt: new Date() },
+        });
+      }
 
       await tx.customerVerificationCode.delete({
         where: { id: verification.id },
@@ -257,10 +259,12 @@ export class CustomersService extends BaseService<
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.customer.update({
-        where: { id: verification.customerId },
-        data: { passwordHash },
-      });
+      if (verification.customerId) {
+        await tx.customer.update({
+          where: { id: verification.customerId },
+          data: { passwordHash },
+        });
+      }
 
       await tx.customerVerificationCode.delete({
         where: { id: verification.id },
@@ -298,7 +302,14 @@ export class CustomersService extends BaseService<
     });
 
     // Envío de correo de recuperación
-    await this.mailService.sendPasswordResetEmail(customer.email, code);
+    this.mailService
+      .sendPasswordResetEmail(customer.email, code)
+      .catch((error) => {
+        this.logger.error(
+          `Error enviando correo de recuperación a ${customer.email}:`,
+          error,
+        );
+      });
 
     return {
       message:
@@ -309,23 +320,29 @@ export class CustomersService extends BaseService<
   // ═══════════════════════════════════════════════
   // PUBLIC: Reenviar Código de Verificación
   // ═══════════════════════════════════════════════
-  async resendVerificationCode(email: string) {
-    const customer = await this.prisma.customer.findUnique({
-      where: { email },
-    });
+  async resendVerificationCode(email: string, isGuest: boolean = false) {
+    let customerId: string | undefined = undefined;
 
-    // Por seguridad (anti-enumeración de usuarios), si no existe,
-    // respondemos un éxito genérico para no dar pistas a atacantes.
-    if (!customer) {
-      return {
-        message: 'Si el correo está registrado, se enviará un nuevo código.',
-      };
-    }
+    // Si NO es un invitado, hacemos las validaciones normales de cuenta recurrente
+    if (!isGuest) {
+      const customer = await this.prisma.customer.findUnique({
+        where: { email },
+      });
 
-    if (customer.emailVerifiedAt) {
-      throw new BadRequestException(
-        'Este correo electrónico ya se encuentra verificado',
-      );
+      // Anti-enumeración de usuarios por seguridad
+      if (!customer) {
+        return {
+          message: 'Si el correo está registrado, se enviará un nuevo código.',
+        };
+      }
+
+      if (customer.emailVerifiedAt) {
+        throw new BadRequestException(
+          'Este correo electrónico ya se encuentra verificado',
+        );
+      }
+
+      customerId = customer.id;
     }
 
     // Generar nuevo código de 6 dígitos
@@ -337,16 +354,16 @@ export class CustomersService extends BaseService<
     await this.prisma.$transaction(async (tx) => {
       // Eliminar códigos anteriores para este cliente si existieran
       await tx.customerVerificationCode.deleteMany({
-        where: { customerId: customer.id },
+        where: { email },
       });
 
       // Crear el nuevo código activo
       await tx.customerVerificationCode.create({
         data: {
           code,
-          email: customer.email,
+          email,
           expiresAt,
-          customerId: customer.id,
+          ...(customerId ? { customerId } : {}),
         },
       });
     });
@@ -354,10 +371,10 @@ export class CustomersService extends BaseService<
     // Aquí SÍ usamos await. Si el proveedor de correos falla,
     // saltará al catch del controlador y enviará un Error 500 al frontend.
     try {
-      await this.mailService.sendVerificationEmail(customer.email, code);
+      await this.mailService.sendVerificationEmail(email, code, isGuest);
     } catch (error) {
       this.logger.error(
-        `[RESEND FAILED] No se pudo enviar el correo a ${customer.email}. Código en DB: ${code}`,
+        `[RESEND FAILED] No se pudo enviar el correo a ${email}. Código en DB: ${code}`,
         error,
       );
       throw new InternalServerErrorException(
