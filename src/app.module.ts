@@ -24,6 +24,8 @@ import { MailModule } from './modules/mail/mail.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NewsletterModule } from './modules/newsletter/newsletter.module';
+import { ComplaintsService } from './modules/complaints/service/complaints.service';
+import { ComplaintsController } from './modules/complaints/controller/complaints.controller';
 
 @Module({
   imports: [
@@ -56,7 +58,7 @@ import { NewsletterModule } from './modules/newsletter/newsletter.module';
     DashboardModule,
     NewsletterModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, ComplaintsController],
+  providers: [AppService, ComplaintsService],
 })
 export class AppModule {}

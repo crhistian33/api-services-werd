@@ -93,15 +93,15 @@ enum PageStatus {
 }
 
 enum ComplaintType {
-  reclamo
-  queja
+  CLAIM
+  COMPLAINT
 }
 
 enum ComplaintStatus {
-  open
-  in_review
-  resolved
-  closed
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
 }
 
 enum AdminPermissionModule {
@@ -1220,27 +1220,40 @@ model Page {
 
 model Complaint {
   id             String          @id @default(uuid())
-  ticketNumber   String          @unique
+  ticketNumber   String          @unique @default(dbgenerated("'RECL-' || to_char(nextval('complaint_ticket_seq'), 'FM00000')"))
+  status         ComplaintStatus @default(OPEN)
+  complaintType  ComplaintType
+  
   customerName   String
   documentType   String
   documentNumber String
+  address        String
   email          String
   phone          String?
+
+  isMinor          Boolean         @default(false)
+  parentName       String?         
+  
+  claimedAmount    Decimal         @default(0.00) @db.Decimal(12, 2) 
+  productName      String
+  
   orderId        String?
   orderNumber    String?
-  complaintType  ComplaintType
-  description    String
-  status         ComplaintStatus @default(open)
-  adminResponse  String?
+
+  description    String            @db.Text
+
+  adminResponse  String?           @db.Text
   managedById    String?
   resolvedById   String?
-  createdAt      DateTime        @default(now())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
   resolvedAt     DateTime?
 
   order          Order?     @relation(fields: [orderId], references: [id])
   managedBy      AdminUser? @relation("ComplaintManagedBy", fields: [managedById], references: [id])
   resolvedBy     AdminUser? @relation("ComplaintResolvedBy", fields: [resolvedById], references: [id])
 
+  @@index([ticketNumber])
   @@index([status])
   @@index([createdAt])
   @@map("complaints")

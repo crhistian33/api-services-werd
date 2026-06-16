@@ -201,11 +201,7 @@ export class MailService {
     template: string,
     context: object,
   ): Promise<void> {
-    try {
-      await this.mailerService.sendMail({ to, subject, template, context });
-    } catch (err: any) {
-      console.error(`[MailService] Error enviando "${subject}" a ${to}:`, err);
-    }
+    await this.mailerService.sendMail({ to, subject, template, context });
   }
 
   // ═══════════════════════════════════════════════════════════

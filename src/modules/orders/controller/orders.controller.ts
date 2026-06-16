@@ -138,6 +138,15 @@ export class OrdersController {
     return this.ordersService.createOrder({ ...dto, ipAddress });
   }
 
+  @Get('me/:id')
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Pedido obtenido exitosamente')
+  @ApiOperation({ summary: 'Obtener detalle completo de un pedido' })
+  @ApiParam({ name: 'id', description: 'UUID del pedido' })
+  findOneOrder(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersService.findOrderById(id);
+  }
+
   // ═══════════════════════════════════════════════════════════
   // CMS - ADMIN (Creación manual excepcional)
   // ═══════════════════════════════════════════════════════════
