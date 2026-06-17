@@ -1,49 +1,34 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
 
+/**
+ * NOTA: a pesar del nombre "SmtpService" (se mantiene para no romper los imports
+ * existentes en MailModule y MailService), este servicio ahora envía correos
+ * usando la API HTTP de Brevo (https://api.brevo.com/v3/smtp/email) en lugar
+ * de una conexión SMTP directa.
+ *
+ * Motivo: algunas plataformas PaaS (Railway, Render, etc.) bloquean o limitan
+ * las conexiones salientes en puertos SMTP (587, 465, 25), causando timeouts.
+ * La API HTTP usa el puerto 443 (HTTPS), que nunca está bloqueado.
+ *
+ * Variable de entorno requerida: BREVO_API_KEY
+ * (se genera en Brevo > Settings > SMTP y API > pestaña "API Keys",
+ * es DIFERENTE de la clave SMTP que se usaba antes)
+ */
 @Injectable()
 export class SmtpService {
   readonly logger = new Logger(SmtpService.name);
-  private transporter: Transporter | null = null;
+  private readonly apiUrl = 'https://api.brevo.com/v3/smtp/email';
 
   constructor(private readonly config: ConfigService) {
-    this.initializeTransporter();
-  }
-
-  private initializeTransporter(): void {
-    const host = this.config.get<string>('MAIL_HOST');
-    let port = this.config.get<number>('MAIL_PORT', 587);
-    const user = this.config.get<string>('MAIL_USER');
-    const pass = this.config.get<string>('MAIL_PASSWORD');
-
-    if (!host || !user || !pass) {
+    const apiKey = this.config.get<string>('BREVO_API_KEY');
+    if (!apiKey) {
       this.logger.warn(
-        'MAIL_HOST, MAIL_USER o MAIL_PASSWORD no configurados. Los correos no se enviarán.',
+        'BREVO_API_KEY no configurada. Los correos no se enviarán.',
       );
-      return;
+    } else {
+      this.logger.log('Brevo API client inicializado (modo HTTP).');
     }
-
-    // Si el puerto es 587 pero se fuerza SSL, cambiar a 465 automáticamente
-    const useSSL = this.config.get<string>('MAIL_SSL', 'false') === 'true';
-    if (useSSL && port === 587) {
-      port = 465;
-    }
-
-    this.transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
-      connectionTimeout: 15000, // 15 segundos
-      greetingTimeout: 15000, // 15 segundos para el saludo SMTP
-      socketTimeout: 30000, // 30 segundos para operaciones
-    });
-
-    this.logger.log(
-      `SMTP transport initialized: ${host}:${port} (SSL: ${port === 465})`,
-    );
   }
 
   async sendMail(options: {
@@ -53,9 +38,11 @@ export class SmtpService {
     from?: string;
     fromName?: string;
   }): Promise<void> {
-    if (!this.transporter) {
+    const apiKey = this.config.get<string>('BREVO_API_KEY');
+
+    if (!apiKey) {
       this.logger.warn(
-        `[SmtpService] SMTP no configurado. No se envió "${options.subject}" a ${options.to}`,
+        `[SmtpService] BREVO_API_KEY no configurada. No se envió "${options.subject}" a ${options.to}`,
       );
       return;
     }
@@ -65,13 +52,28 @@ export class SmtpService {
     const fromName =
       options.fromName ?? this.config.get<string>('MAIL_FROM_NAME', 'Werd');
 
+    const body = {
+      sender: { name: fromName, email: fromEmail },
+      to: [{ email: options.to }],
+      subject: options.subject,
+      htmlContent: options.html,
+    };
+
     try {
-      await this.transporter.sendMail({
-        from: `"${fromName}" <${fromEmail}>`,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'api-key': apiKey,
+        },
+        body: JSON.stringify(body),
       });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Brevo API respondió ${response.status}: ${errorBody}`);
+      }
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : 'Error desconocido';
@@ -83,13 +85,22 @@ export class SmtpService {
   }
 
   /**
-   * Verifica la conexión SMTP. Útil para health checks o tests.
+   * Verifica que la API key de Brevo sea válida haciendo una llamada
+   * de bajo costo (obtener info de la cuenta). Útil para health checks.
    */
   async verifyConnection(): Promise<boolean> {
-    if (!this.transporter) return false;
+    const apiKey = this.config.get<string>('BREVO_API_KEY');
+    if (!apiKey) return false;
+
     try {
-      await this.transporter.verify();
-      return true;
+      const response = await fetch('https://api.brevo.com/v3/account', {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          'api-key': apiKey,
+        },
+      });
+      return response.ok;
     } catch {
       return false;
     }
