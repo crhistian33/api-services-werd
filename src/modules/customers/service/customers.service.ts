@@ -5,7 +5,6 @@ import {
   UnauthorizedException,
   NotFoundException,
   Logger,
-  InternalServerErrorException,
 } from '@nestjs/common';
 
 import * as bcrypt from 'bcrypt';
@@ -161,17 +160,11 @@ export class CustomersService extends BaseService<
       return newCustomer;
     });
 
-    // Emitir evento para envío de correo (Fuera de la transacción y sin await)
+    // Envío de correo asíncrono no bloqueante (fire-and-forget)
+    // El MailService ya maneja errores internamente con catch + log
     this.mailService
       .sendVerificationEmail(customer.email, code)
-      .catch((error) => {
-        // Registramos el error en los logs del servidor para auditoría,
-        // pero no interrumpimos la experiencia del usuario.
-        this.logger.error(
-          `Error enviando correo de verificación a ${customer.email}:`,
-          error,
-        );
-      });
+      .catch(() => {});
 
     // 4. Responder al Frontend de inmediato
     return customer;
@@ -301,15 +294,10 @@ export class CustomersService extends BaseService<
       },
     });
 
-    // Envío de correo de recuperación
+    // Envío asíncrono no bloqueante (fire-and-forget)
     this.mailService
       .sendPasswordResetEmail(customer.email, code)
-      .catch((error) => {
-        this.logger.error(
-          `Error enviando correo de recuperación a ${customer.email}:`,
-          error,
-        );
-      });
+      .catch(() => {});
 
     return {
       message:
@@ -368,19 +356,11 @@ export class CustomersService extends BaseService<
       });
     });
 
-    // Aquí SÍ usamos await. Si el proveedor de correos falla,
-    // saltará al catch del controlador y enviará un Error 500 al frontend.
-    try {
-      await this.mailService.sendVerificationEmail(email, code, isGuest);
-    } catch (error) {
-      this.logger.error(
-        `[RESEND FAILED] No se pudo enviar el correo a ${email}. Código en DB: ${code}`,
-        error,
-      );
-      throw new InternalServerErrorException(
-        'No se pudo enviar el correo electrónico en este momento. Por favor, inténtelo más tarde.',
-      );
-    }
+    // Envío asíncrono no bloqueante (fire-and-forget)
+    // El error se loggea internamente en MailService, nunca bloquea la respuesta HTTP
+    this.mailService
+      .sendVerificationEmail(email, code, isGuest)
+      .catch(() => {});
 
     return {
       message: 'Si el correo está registrado, se enviará un nuevo código.',

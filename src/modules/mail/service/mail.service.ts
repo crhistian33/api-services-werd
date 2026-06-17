@@ -1,6 +1,9 @@
-import { MailerService } from '@nestjs-modules/mailer';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BrevoClient } from '@getbrevo/brevo';
+import * as Handlebars from 'handlebars';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   CLAIM_TYPE_LABELS,
   DELIVERY_TYPE_LABELS,
@@ -9,7 +12,7 @@ import {
 import { RefundMethod, ClaimType } from 'generated/prisma/client';
 
 // ─────────────────────────────────────────────────────────────
-// Contextos de templates — EXISTENTES
+// Contextos de templates
 // ─────────────────────────────────────────────────────────────
 
 interface OrderConfirmedContext {
@@ -51,35 +54,12 @@ interface ClaimCreatedContext {
   items: { productName: string; quantity: number }[];
 }
 
-interface ClaimApprovedContext {
-  customerName: string;
-  claimNumber: string;
-  claimType: string;
-  orderNumber: string;
-  reviewNote?: string;
-  totalRefundedAmount?: string;
-  requiresReturn: boolean;
-  returnAddress?: string;
-}
-
 interface ClaimRejectedContext {
   customerName: string;
   claimNumber: string;
   orderNumber: string;
   reviewNote: string;
 }
-
-interface ClaimCompletedContext {
-  customerName: string;
-  claimNumber: string;
-  claimType: string;
-  totalRefundedAmount?: string;
-  completedAt: string;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Contextos de templates — NUEVOS
-// ─────────────────────────────────────────────────────────────
 
 interface OrderPendingPaymentContext {
   customerName: string;
@@ -98,7 +78,7 @@ interface OrderPaymentReminderContext {
   paymentMethod: string;
   horasRestantes: number;
   paymentExpiresAt: string;
-  whatsappNumber?: string; // Número de WhatsApp de soporte (del .env)
+  whatsappNumber?: string;
 }
 
 interface OrderPaymentConfirmedContext {
@@ -121,10 +101,10 @@ interface OrderCancelledByAdminContext {
   customerName: string;
   orderNumber: string;
   cancellationReason: string;
-  refundPending?: boolean; // ✅ AGREGADO
-  supportWhatsapp?: string | null; // ✅ AGREGADO
-  supportEmail?: string | null; // ✅ AGREGADO
-  canReorder?: boolean; // ✅ AGREGADO
+  refundPending?: boolean;
+  supportWhatsapp?: string | null;
+  supportEmail?: string | null;
+  canReorder?: boolean;
   storeUrl?: string;
 }
 
@@ -148,7 +128,7 @@ interface OrderRefundedContext {
   refundAmount: number;
   refundMethod: string;
   refundDate: string;
-  evidenceImageUrl?: string; // ✅ URL de la imagen de evidencia
+  evidenceImageUrl?: string;
 }
 
 interface ClaimShippedAdminContext {
@@ -170,16 +150,24 @@ interface ClaimShipmentConfirmedContext {
   trackingNumber: string;
   courierName: string;
 }
+
 @Injectable()
 export class MailService {
-  constructor(
-    private readonly mailerService: MailerService,
-    private readonly config: ConfigService,
-  ) {}
+  readonly logger = new Logger(MailService.name);
+  private brevoClient: BrevoClient;
+  private templates: Map<string, HandlebarsTemplateDelegate> = new Map();
 
-  // ── URLs y datos configurables desde .env ──────────────────
-  // STORE_FRONTEND_URL=https://tienda.werd.com
-  // STORE_RETURN_ADDRESS=Jr. Comercio 123, Lima, Lima 15001
+  constructor(private readonly config: ConfigService) {
+    const apiKey = this.config.get<string>('BREVO_API_KEY');
+    if (apiKey) {
+      this.brevoClient = new BrevoClient({ apiKey });
+    } else {
+      this.logger.warn(
+        'BREVO_API_KEY no configurada. Los correos no se enviarán.',
+      );
+    }
+  }
+
   private get storeFrontendUrl(): string {
     return this.config.get<string>(
       'STORE_FRONTEND_URL',
@@ -194,14 +182,68 @@ export class MailService {
     );
   }
 
-  // ── Helper central ──────────────────────────────────────────
+  private get fromEmail(): string {
+    return this.config.get<string>('MAIL_FROM', 'noreply@werd.com');
+  }
+
+  private get fromName(): string {
+    return this.config.get<string>('MAIL_FROM_NAME', 'Werd');
+  }
+
+  /**
+   * Renderiza un template Handlebars con el contexto dado.
+   * Los templates se cachean en memoria después de la primera lectura.
+   */
+  private renderTemplate(templateName: string, context: object): string {
+    let template = this.templates.get(templateName);
+    if (!template) {
+      const templatePath = join(
+        __dirname,
+        '..',
+        'templates',
+        `${templateName}.hbs`,
+      );
+      const source = readFileSync(templatePath, 'utf-8');
+      template = Handlebars.compile(source);
+      this.templates.set(templateName, template);
+    }
+    return template(context);
+  }
+
+  /**
+   * Envía un correo transaccional vía API de Brevo (HTTP).
+   * Fire-and-forget: el error se loggea pero NO se relanza,
+   * para que nunca bloquee la respuesta HTTP.
+   */
   private async send(
     to: string,
     subject: string,
-    template: string,
+    templateName: string,
     context: object,
   ): Promise<void> {
-    await this.mailerService.sendMail({ to, subject, template, context });
+    if (!this.brevoClient) {
+      this.logger.warn(
+        `[MailService] Brevo no configurado. No se envió "${subject}" a ${to}`,
+      );
+      return;
+    }
+
+    try {
+      const htmlContent = this.renderTemplate(templateName, context);
+
+      await this.brevoClient.transactionalEmails.sendTransacEmail({
+        to: [{ email: to }],
+        subject,
+        htmlContent,
+        sender: { email: this.fromEmail, name: this.fromName },
+      });
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Error desconocido';
+      this.logger.error(
+        `[MailService] Error enviando "${subject}" a ${to}: ${errorMessage}`,
+      );
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -217,23 +259,20 @@ export class MailService {
       ? 'Código de verificación para tu pedido - Werd'
       : 'Verifica tu cuenta - Werd';
 
-    await this.send(email, subject, './verification', {
-      code,
-      isGuest,
-    });
+    await this.send(email, subject, 'verification', { code, isGuest });
   }
 
   async sendPasswordResetEmail(email: string, code: string): Promise<void> {
     await this.send(
       email,
       'Recuperación de contraseña - Werd',
-      './reset-password',
+      'reset-password',
       { code },
     );
   }
 
   // ═══════════════════════════════════════════════════════════
-  // CICLO DE VIDA DEL PEDIDO — EXISTENTES
+  // CICLO DE VIDA DEL PEDIDO
   // ═══════════════════════════════════════════════════════════
 
   async sendOrderConfirmed(
@@ -243,7 +282,7 @@ export class MailService {
     await this.send(
       email,
       `Pedido confirmado ${ctx.orderNumber} - Werd`,
-      './order-confirmed',
+      'order-confirmed',
       ctx,
     );
   }
@@ -262,7 +301,7 @@ export class MailService {
     await this.send(
       email,
       `Tu pedido ${ctx.orderNumber} está en camino - Werd`,
-      './order-shipped',
+      'order-shipped',
       {
         ...ctx,
         deliveryTypeLabel:
@@ -279,7 +318,7 @@ export class MailService {
     await this.send(
       email,
       `Pedido ${ctx.orderNumber} entregado - Werd`,
-      './order-delivered',
+      'order-delivered',
       {
         ...ctx,
         reviewUrl: `${this.storeFrontendUrl}/mis-pedidos`,
@@ -287,14 +326,6 @@ export class MailService {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // CICLO DE VIDA DEL PEDIDO — NUEVOS
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Se envía al crear un pedido con pago manual pendiente (YAPE/PLIN/transferencia).
-   * Incluye las instrucciones del método, el número de WhatsApp y el tiempo límite.
-   */
   async sendOrderPendingPayment(
     email: string,
     ctx: OrderPendingPaymentContext,
@@ -302,14 +333,11 @@ export class MailService {
     await this.send(
       email,
       `Pedido ${ctx.orderNumber} - Completa tu pago - Werd`,
-      './order-pending-payment',
+      'order-pending-payment',
       ctx,
     );
   }
 
-  /**
-   * Recordatorio enviado automáticamente N horas antes de que venza el pago.
-   */
   async sendPaymentReminder(
     email: string,
     ctx: OrderPaymentReminderContext,
@@ -317,14 +345,11 @@ export class MailService {
     await this.send(
       email,
       `⚠ Tu pedido ${ctx.orderNumber} está por vencer - Werd`,
-      './order-payment-reminder',
+      'order-payment-reminder',
       ctx,
     );
   }
 
-  /**
-   * Confirmación de que el admin verificó y aceptó el pago manual.
-   */
   async sendOrderPaymentConfirmed(
     email: string,
     ctx: OrderPaymentConfirmedContext,
@@ -332,14 +357,11 @@ export class MailService {
     await this.send(
       email,
       `Pago de pedido ${ctx.orderNumber} confirmado - Werd`,
-      './order-payment-confirmed',
+      'order-payment-confirmed',
       ctx,
     );
   }
 
-  /**
-   * Notificación de cancelación automática por falta de pago.
-   */
   async sendOrderCancelledNoPayment(
     email: string,
     ctx: OrderCancelledNoPaymentContext,
@@ -347,14 +369,11 @@ export class MailService {
     await this.send(
       email,
       `Pedido ${ctx.orderNumber} cancelado por falta de pago - Werd`,
-      './order-cancelled-no-payment',
+      'order-cancelled-no-payment',
       ctx,
     );
   }
 
-  /**
-   * Cancelación del pedido realizada directamente por el admin.
-   */
   async sendOrderCancelledByAdmin(
     email: string,
     ctx: OrderCancelledByAdminContext,
@@ -362,19 +381,15 @@ export class MailService {
     await this.send(
       email,
       `Tu pedido ${ctx.orderNumber} ha sido cancelado - Werd`,
-      './order-cancelled-admin',
+      'order-cancelled-admin',
       {
         ...ctx,
         canReorder: true,
-        storeUrl: process.env.STORE_FRONTEND_URL || 'https://werd.com', // ✅ URL desde .env
+        storeUrl: this.storeFrontendUrl,
       },
     );
   }
 
-  /**
-   * Notificación opcional cuando el pedido pasa a "processing" (preparación).
-   * Activar según configuración de la tienda (notifyOnProcessing).
-   */
   async sendOrderProcessing(
     email: string,
     ctx: OrderProcessingContext,
@@ -382,15 +397,11 @@ export class MailService {
     await this.send(
       email,
       `Pedido ${ctx.orderNumber} en preparación - Werd`,
-      './order-processing',
+      'order-processing',
       ctx,
     );
   }
 
-  /**
-   * Notificación interna a los administradores cuando se recibe un nuevo pedido pagado.
-   * Enviar a múltiples destinatarios (storeEmail, supportEmail).
-   */
   async sendOrderNewAdmin(
     emails: string[],
     ctx: OrderNewAdminContext,
@@ -399,7 +410,7 @@ export class MailService {
       await this.send(
         email,
         `🛒 Nuevo pedido ${ctx.orderNumber} - ${ctx.total} - Werd`,
-        './order-new-admin',
+        'order-new-admin',
         ctx,
       );
     }
@@ -416,7 +427,7 @@ export class MailService {
     await this.send(
       email,
       `Solicitud ${ctx.claimNumber} recibida - Werd`,
-      './claim-created',
+      'claim-created',
       ctx,
     );
   }
@@ -434,22 +445,21 @@ export class MailService {
   ): Promise<void> {
     const requiresReturn =
       claim.type === 'REFUND' || claim.type === 'REPLACEMENT';
-    const ctx: ClaimApprovedContext = {
-      customerName: claim.customerName,
-      claimNumber: claim.claimNumber,
-      claimType: CLAIM_TYPE_LABELS[claim.type] ?? claim.type,
-      orderNumber: claim.orderNumber,
-      reviewNote: claim.reviewNote,
-      totalRefundedAmount: claim.totalRefundedAmount?.toFixed(2),
-      requiresReturn,
-      returnAddress: requiresReturn ? this.storeReturnAddress : undefined,
-    };
 
     await this.send(
       email,
       `Solicitud ${claim.claimNumber} aprobada - Werd`,
-      './claim-approved',
-      ctx,
+      'claim-approved',
+      {
+        customerName: claim.customerName,
+        claimNumber: claim.claimNumber,
+        claimType: CLAIM_TYPE_LABELS[claim.type] ?? claim.type,
+        orderNumber: claim.orderNumber,
+        reviewNote: claim.reviewNote,
+        totalRefundedAmount: claim.totalRefundedAmount?.toFixed(2),
+        requiresReturn,
+        returnAddress: requiresReturn ? this.storeReturnAddress : undefined,
+      },
     );
   }
 
@@ -460,7 +470,7 @@ export class MailService {
     await this.send(
       email,
       `Solicitud ${ctx.claimNumber} revisada - Werd`,
-      './claim-rejected',
+      'claim-rejected',
       ctx,
     );
   }
@@ -475,19 +485,17 @@ export class MailService {
       completedAt: Date;
     },
   ): Promise<void> {
-    const ctx: ClaimCompletedContext = {
-      customerName: claim.customerName,
-      claimNumber: claim.claimNumber,
-      claimType: CLAIM_TYPE_LABELS[claim.type] ?? claim.type,
-      totalRefundedAmount: claim.totalRefundedAmount?.toFixed(2),
-      completedAt: claim.completedAt.toLocaleDateString('es-PE'),
-    };
-
     await this.send(
       email,
       `Solicitud ${claim.claimNumber} completada - Werd`,
-      './claim-completed',
-      ctx,
+      'claim-completed',
+      {
+        customerName: claim.customerName,
+        claimNumber: claim.claimNumber,
+        claimType: CLAIM_TYPE_LABELS[claim.type] ?? claim.type,
+        totalRefundedAmount: claim.totalRefundedAmount?.toFixed(2),
+        completedAt: claim.completedAt.toLocaleDateString('es-PE'),
+      },
     );
   }
 
@@ -507,7 +515,7 @@ export class MailService {
     await this.send(
       email,
       `Reembolso procesado - Pedido ${ctx.orderNumber} - Werd`,
-      './order-refunded',
+      'order-refunded',
       {
         ...ctx,
         refundMethodLabel:
@@ -520,9 +528,6 @@ export class MailService {
     );
   }
 
-  /**
-   * Notificación interna al admin: Cliente confirmó envío de producto devuelto
-   */
   async sendClaimShippedAdmin(
     emails: string[],
     ctx: ClaimShippedAdminContext,
@@ -531,15 +536,12 @@ export class MailService {
       await this.send(
         email,
         `📦 Cliente envió ${ctx.claimType} — ${ctx.claimNumber} — Werd`,
-        './claim-shipped-admin',
+        'claim-shipped-admin',
         ctx,
       );
     }
   }
 
-  /**
-   * Confirmación al cliente: Recibimos los datos de tu envío de retorno
-   */
   async sendClaimShipmentConfirmed(
     email: string,
     ctx: ClaimShipmentConfirmedContext,
@@ -547,7 +549,7 @@ export class MailService {
     await this.send(
       email,
       `Envío de retorno registrado — ${ctx.claimNumber} — Werd`,
-      './claim-shipment-confirmed',
+      'claim-shipment-confirmed',
       ctx,
     );
   }
