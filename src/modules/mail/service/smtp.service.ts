@@ -14,7 +14,7 @@ export class SmtpService {
 
   private initializeTransporter(): void {
     const host = this.config.get<string>('MAIL_HOST');
-    const port = this.config.get<number>('MAIL_PORT', 587);
+    let port = this.config.get<number>('MAIL_PORT', 587);
     const user = this.config.get<string>('MAIL_USER');
     const pass = this.config.get<string>('MAIL_PASSWORD');
 
@@ -25,14 +25,25 @@ export class SmtpService {
       return;
     }
 
+    // Si el puerto es 587 pero se fuerza SSL, cambiar a 465 automáticamente
+    const useSSL = this.config.get<string>('MAIL_SSL', 'false') === 'true';
+    if (useSSL && port === 587) {
+      port = 465;
+    }
+
     this.transporter = nodemailer.createTransport({
       host,
       port,
       secure: port === 465,
       auth: { user, pass },
+      connectionTimeout: 15000, // 15 segundos
+      greetingTimeout: 15000, // 15 segundos para el saludo SMTP
+      socketTimeout: 30000, // 30 segundos para operaciones
     });
 
-    this.logger.log(`SMTP transport initialized: ${host}:${port}`);
+    this.logger.log(
+      `SMTP transport initialized: ${host}:${port} (SSL: ${port === 465})`,
+    );
   }
 
   async sendMail(options: {
