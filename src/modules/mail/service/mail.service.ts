@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BrevoClient } from '@getbrevo/brevo';
 import * as Handlebars from 'handlebars';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { SmtpService } from './smtp.service';
 import {
   CLAIM_TYPE_LABELS,
   DELIVERY_TYPE_LABELS,
@@ -154,19 +154,12 @@ interface ClaimShipmentConfirmedContext {
 @Injectable()
 export class MailService {
   readonly logger = new Logger(MailService.name);
-  private brevoClient: BrevoClient;
   private templates: Map<string, HandlebarsTemplateDelegate> = new Map();
 
-  constructor(private readonly config: ConfigService) {
-    const apiKey = this.config.get<string>('BREVO_API_KEY');
-    if (apiKey) {
-      this.brevoClient = new BrevoClient({ apiKey });
-    } else {
-      this.logger.warn(
-        'BREVO_API_KEY no configurada. Los correos no se enviarán.',
-      );
-    }
-  }
+  constructor(
+    private readonly config: ConfigService,
+    private readonly smtp: SmtpService,
+  ) {}
 
   private get storeFrontendUrl(): string {
     return this.config.get<string>(
@@ -211,7 +204,7 @@ export class MailService {
   }
 
   /**
-   * Envía un correo transaccional vía API de Brevo (HTTP).
+   * Envía un correo transaccional vía SMTP (nodemailer).
    * Fire-and-forget: el error se loggea pero NO se relanza,
    * para que nunca bloquee la respuesta HTTP.
    */
@@ -221,21 +214,15 @@ export class MailService {
     templateName: string,
     context: object,
   ): Promise<void> {
-    if (!this.brevoClient) {
-      this.logger.warn(
-        `[MailService] Brevo no configurado. No se envió "${subject}" a ${to}`,
-      );
-      return;
-    }
-
     try {
       const htmlContent = this.renderTemplate(templateName, context);
 
-      await this.brevoClient.transactionalEmails.sendTransacEmail({
-        to: [{ email: to }],
+      await this.smtp.sendMail({
+        to,
         subject,
-        htmlContent,
-        sender: { email: this.fromEmail, name: this.fromName },
+        html: htmlContent,
+        from: this.fromEmail,
+        fromName: this.fromName,
       });
     } catch (err: unknown) {
       const errorMessage =
