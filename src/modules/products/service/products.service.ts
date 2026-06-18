@@ -59,6 +59,14 @@ const PUBLIC_LIST_INCLUDE = {
   features: { orderBy: { sortOrder: 'asc' as const } },
 } as const;
 
+const SEARCH_INCLUDE = {
+  category: { select: { id: true, name: true, slug: true } },
+  brand: { select: { id: true, name: true, slug: true } },
+  price: true,
+  features: { orderBy: { sortOrder: 'asc' as const } },
+  specs: { orderBy: { sortOrder: 'asc' as const } },
+} as const;
+
 @Injectable()
 export class ProductsService extends SluggableService<
   ProductEntity,
@@ -145,6 +153,61 @@ export class ProductsService extends SluggableService<
       },
       orderBy: [{ createdAt: 'desc' }],
       include: PUBLIC_LIST_INCLUDE,
+      pagination: { page, limit },
+    });
+
+    return {
+      ...result,
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+    };
+  }
+
+  // ═══════════════════════════════════════════════
+  // searchProducts — Búsqueda profunda en texto completo
+  // Busca por: nombre, marca, categoría, descripciones, specs y features
+  // ═══════════════════════════════════════════════
+
+  async searchProducts(query: string, page = 1, limit = 20) {
+    const where: Prisma.ProductWhereInput = {
+      status: 'active',
+      deletedAt: null,
+      OR: [
+        // Nombre del producto
+        { name: { contains: query, mode: 'insensitive' } },
+        // SKU
+        { sku: { contains: query, mode: 'insensitive' } },
+        // Descripción corta
+        { shortDescription: { contains: query, mode: 'insensitive' } },
+        // Descripción completa
+        { description: { contains: query, mode: 'insensitive' } },
+        // Nombre de la marca (relación)
+        { brand: { name: { contains: query, mode: 'insensitive' } } },
+        // Nombre de la categoría (relación)
+        { category: { name: { contains: query, mode: 'insensitive' } } },
+        // Características principales (features)
+        {
+          features: {
+            some: { feature: { contains: query, mode: 'insensitive' } },
+          },
+        },
+        // Especificaciones (specs) — tanto key como value
+        {
+          specs: {
+            some: {
+              OR: [
+                { specKey: { contains: query, mode: 'insensitive' } },
+                { specValue: { contains: query, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = await this.findAll({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      include: SEARCH_INCLUDE,
       pagination: { page, limit },
     });
 

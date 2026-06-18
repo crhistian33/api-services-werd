@@ -65,6 +65,20 @@ export class ProductsController {
   }
 
   @Public()
+  @Get('public/search')
+  @ResponseMessage('Búsqueda de productos')
+  @ApiOperation({ summary: 'Buscar productos por texto completo' })
+  searchProducts(
+    @Query('q') q: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) || 1 : 1;
+    const limitNum = limit ? parseInt(limit, 10) || 20 : 20;
+    return this.productsService.searchProducts(q, pageNum, limitNum);
+  }
+
+  @Public()
   @Get('public/:slug')
   @ResponseMessage('Producto obtenido exitosamente')
   @ApiOperation({ summary: 'Obtener producto por slug' })
