@@ -364,7 +364,16 @@ export class OrdersService extends BaseService<
 
   async findMyOrders(customerId: string, query: QueryOrderDto) {
     return this.findAll({
-      where: { customerId, ...(query.status && { status: query.status }) },
+      where: {
+        customerId,
+        ...(query.status && { status: query.status }),
+        ...(query.search && {
+          orderNumber: {
+            contains: query.search,
+            mode: 'insensitive',
+          },
+        }),
+      },
       orderBy: { placedAt: 'desc' },
       include: {
         items: {
@@ -380,6 +389,7 @@ export class OrdersService extends BaseService<
         paymentMethod: {
           select: { id: true, name: true, code: true, type: true },
         },
+        logistics: true,
         refunds: true,
       },
       pagination: { page: query.page, limit: query.limit },

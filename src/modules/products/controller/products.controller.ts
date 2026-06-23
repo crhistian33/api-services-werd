@@ -29,6 +29,7 @@ import {
   BulkDeleteProductDto,
   BulkSoftDeleteProductDto,
   BulkRestoreProductDto,
+  ListProductsDto,
 } from '../dto';
 import { SetPriceDto } from '../dto/price-product.dto';
 import { SetSpecsDto, SetFeaturesDto } from '../dto/specs-product.dto';
@@ -67,15 +68,36 @@ export class ProductsController {
   @Public()
   @Get('public/search')
   @ResponseMessage('Búsqueda de productos')
-  @ApiOperation({ summary: 'Buscar productos por texto completo' })
+  @ApiOperation({ summary: 'Buscar productos por texto completo con filtros' })
   searchProducts(
     @Query('q') q: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('brandId') brandId?: string,
+    @Query('minPrice') minPrice?: string,
+    @Query('maxPrice') maxPrice?: string,
+    @Query('sortBy') sortBy?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) || 1 : 1;
     const limitNum = limit ? parseInt(limit, 10) || 20 : 20;
-    return this.productsService.searchProducts(q, pageNum, limitNum);
+    return this.productsService.searchProducts(q, pageNum, limitNum, {
+      categoryId,
+      brandId,
+      minPrice: minPrice ? parseFloat(minPrice) : undefined,
+      maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
+      sortBy,
+    });
+  }
+
+  @Public()
+  @Get('public/list')
+  @ResponseMessage('Listado de productos obtenidos exitosamente')
+  @ApiOperation({ summary: 'Listado de productos para el buscador' })
+  @ApiOkResponse({ description: 'Lista paginada — solo activos' })
+  listProductsPublic(@Query() query: ListProductsDto) {
+    console.log('Query', query);
+    return this.productsService.listProductsPublic(query);
   }
 
   @Public()

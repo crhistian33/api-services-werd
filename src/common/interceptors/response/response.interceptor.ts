@@ -8,15 +8,12 @@ import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { RESPONSE_MESSAGE_KEY } from '../../decorators/response-message.decorator';
-import { AnyApiResponse } from '../../interfaces/api-response.interface';
+import {
+  AnyApiResponse,
+  ApiPaginatedResponse,
+} from '../../interfaces/api-response.interface';
 
-// ── Tipado interno para respuesta paginada ───────────────────
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: object;
-}
-
-function isPaginated<T>(value: unknown): value is PaginatedResponse<T> {
+function isPaginated<T>(value: unknown): value is ApiPaginatedResponse<T> {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -50,6 +47,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<
             ...(message && { message }),
             data: response.data,
             meta: response.meta,
+            ...(response.facets ? { facets: response.facets } : {}),
           };
         }
 

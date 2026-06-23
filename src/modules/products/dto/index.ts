@@ -4,3 +4,4 @@ export * from './query-product.dto';
 export * from './price-product.dto';
 export * from './specs-product.dto';
 export * from './bulk-product.dto';
+export * from './list-products.dto';

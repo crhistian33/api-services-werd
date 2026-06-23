@@ -13,7 +13,9 @@ import { PaymentMethodType } from 'generated/prisma/client';
 // 'cash_on_delivery' se confirma al marcar la entrega
 const MANUAL_PAYMENT_TYPES: PaymentMethodType[] = [
   PaymentMethodType.wallet, // YAPE, PLIN
-  PaymentMethodType.cash_code, // Transferencia bancaria, código de pago
+  PaymentMethodType.cash_code, // Código de pago
+  PaymentMethodType.bank_transfer, // Transferencia bancaria
+  PaymentMethodType.cash_on_delivery, // Pago en efectivo al recibir
 ];
 
 @Injectable()

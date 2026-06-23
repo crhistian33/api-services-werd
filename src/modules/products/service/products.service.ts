@@ -8,7 +8,12 @@ import {
 } from '../../images/services/image-record.service';
 import { ProductPriceService } from './product-price.service';
 import { ProductSpecsService } from './product-specs.service';
-import { CreateProductDto, UpdateProductDto, QueryProductDto } from '../dto';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  QueryProductDto,
+  ListProductsDto,
+} from '../dto';
 
 type ProductEntity = Prisma.ProductGetPayload<{
   include: {
@@ -167,53 +172,346 @@ export class ProductsService extends SluggableService<
   // Busca por: nombre, marca, categoría, descripciones, specs y features
   // ═══════════════════════════════════════════════
 
-  async searchProducts(query: string, page = 1, limit = 20) {
-    const where: Prisma.ProductWhereInput = {
+  async searchProducts(
+    query: string,
+    page = 1,
+    limit = 20,
+    options?: {
+      categoryId?: string;
+      brandId?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      sortBy?: string;
+    },
+  ) {
+    // Base search condition (excluding facets/filters)
+    const baseWhere: Prisma.ProductWhereInput = {
       status: 'active',
       deletedAt: null,
-      OR: [
-        // Nombre del producto
-        { name: { contains: query, mode: 'insensitive' } },
-        // SKU
-        { sku: { contains: query, mode: 'insensitive' } },
-        // Descripción corta
-        { shortDescription: { contains: query, mode: 'insensitive' } },
-        // Descripción completa
-        { description: { contains: query, mode: 'insensitive' } },
-        // Nombre de la marca (relación)
-        { brand: { name: { contains: query, mode: 'insensitive' } } },
-        // Nombre de la categoría (relación)
-        { category: { name: { contains: query, mode: 'insensitive' } } },
-        // Características principales (features)
-        {
-          features: {
-            some: { feature: { contains: query, mode: 'insensitive' } },
-          },
-        },
-        // Especificaciones (specs) — tanto key como value
-        {
-          specs: {
-            some: {
-              OR: [
-                { specKey: { contains: query, mode: 'insensitive' } },
-                { specValue: { contains: query, mode: 'insensitive' } },
-              ],
-            },
-          },
-        },
-      ],
+      ...(query
+        ? {
+            OR: [
+              { name: { contains: query, mode: 'insensitive' } },
+              { sku: { contains: query, mode: 'insensitive' } },
+              { shortDescription: { contains: query, mode: 'insensitive' } },
+              { description: { contains: query, mode: 'insensitive' } },
+              { brand: { name: { contains: query, mode: 'insensitive' } } },
+              { category: { name: { contains: query, mode: 'insensitive' } } },
+              {
+                features: {
+                  some: { feature: { contains: query, mode: 'insensitive' } },
+                },
+              },
+              {
+                specs: {
+                  some: {
+                    OR: [
+                      { specKey: { contains: query, mode: 'insensitive' } },
+                      { specValue: { contains: query, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
     };
 
-    const result = await this.findAll({
-      where,
-      orderBy: [{ createdAt: 'desc' }],
-      include: SEARCH_INCLUDE,
-      pagination: { page, limit },
-    });
+    // Full filter condition
+    const where: Prisma.ProductWhereInput = {
+      ...baseWhere,
+      ...(options?.categoryId !== undefined
+        ? { categoryId: options.categoryId }
+        : {}),
+      ...(options?.brandId !== undefined ? { brandId: options.brandId } : {}),
+      // Price filter via relation (ProductPrice is a related model)
+      ...(options?.minPrice !== undefined || options?.maxPrice !== undefined
+        ? {
+            price: {
+              is: {
+                price: {
+                  ...(options?.minPrice !== undefined
+                    ? { gte: options.minPrice }
+                    : {}),
+                  ...(options?.maxPrice !== undefined
+                    ? { lte: options.maxPrice }
+                    : {}),
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
+    let orderBy: Prisma.ProductOrderByWithRelationInput[] = [
+      { createdAt: 'desc' },
+    ];
+    if (options?.sortBy) {
+      if (options.sortBy === 'price-asc')
+        orderBy = [{ price: { price: 'asc' } }];
+      else if (options.sortBy === 'price-desc')
+        orderBy = [{ price: { price: 'desc' } }];
+      else if (options.sortBy === 'name-asc') orderBy = [{ name: 'asc' }];
+      else if (options.sortBy === 'name-desc') orderBy = [{ name: 'desc' }];
+    }
+
+    const [result, categoryGroups, brandGroups] = await Promise.all([
+      this.findAll({
+        where,
+        orderBy,
+        include: SEARCH_INCLUDE,
+        pagination: { page, limit },
+      }),
+      this.prisma.product.groupBy({
+        by: ['categoryId'],
+        where: baseWhere,
+        _count: { id: true },
+      }),
+      this.prisma.product.groupBy({
+        by: ['brandId'],
+        where: baseWhere,
+        _count: { id: true },
+      }),
+    ]);
+
+    // Enhance facets with names
+    const categoryIds = categoryGroups.map((g) => g.categoryId);
+    const brandIds = brandGroups
+      .map((g) => g.brandId)
+      .filter(Boolean) as string[];
+
+    const [categories, brands] = await Promise.all([
+      categoryIds.length > 0
+        ? this.prisma.category.findMany({
+            where: { id: { in: categoryIds } },
+            select: { id: true, name: true, slug: true },
+          })
+        : ([] as { id: string; name: string; slug: string }[]),
+      brandIds.length > 0
+        ? this.prisma.brand.findMany({
+            where: { id: { in: brandIds } },
+            select: { id: true, name: true, slug: true },
+          })
+        : ([] as { id: string; name: string; slug: string }[]),
+    ]);
+
+    const facets = {
+      categories: categoryGroups
+        .map((g) => {
+          const cat = categories.find((c) => c.id === g.categoryId);
+          return {
+            id: g.categoryId,
+            name: cat?.name || 'Unknown',
+            slug: cat?.slug || '',
+            count: g._count.id,
+          };
+        })
+        .filter((c) => c.name !== 'Unknown')
+        .sort((a, b) => b.count - a.count),
+      brands: brandGroups
+        .filter((g) => g.brandId)
+        .map((g) => {
+          const b = brands.find((b) => b.id === g.brandId);
+          return {
+            id: g.brandId!,
+            name: b?.name || 'Unknown',
+            slug: b?.slug || '',
+            count: g._count.id,
+          };
+        })
+        .filter((b) => b.name !== 'Unknown')
+        .sort((a, b) => b.count - a.count),
+    };
 
     return {
       ...result,
       data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+      facets,
+    };
+  }
+
+  async listProductsPublic(dto: ListProductsDto) {
+    const {
+      search,
+      categoryId,
+      brandId,
+      minPrice,
+      maxPrice,
+      sortBy,
+      page = 1,
+      limit = 20,
+    } = dto;
+
+    // 1. CONDICIÓN BASE: Define el "universo" contextual (Fijo por Categoría o por término de Búsqueda)
+    const baseWhere: Prisma.ProductWhereInput = {
+      status: 'active',
+      deletedAt: null,
+      ...(categoryId && { categoryId }),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { sku: { contains: search, mode: 'insensitive' } },
+              { shortDescription: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+              { brand: { name: { contains: search, mode: 'insensitive' } } },
+              { category: { name: { contains: search, mode: 'insensitive' } } },
+              {
+                features: {
+                  some: { feature: { contains: search, mode: 'insensitive' } },
+                },
+              },
+              {
+                specs: {
+                  some: {
+                    OR: [
+                      { specKey: { contains: search, mode: 'insensitive' } },
+                      { specValue: { contains: search, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    // 2. CONDICIÓN DINÁMICA: Aplica absolutamente todos los filtros cruzados del panel sobre los productos
+    const productsWhere: Prisma.ProductWhereInput = {
+      ...baseWhere,
+      ...(brandId && { brandId }),
+      ...(minPrice !== undefined || maxPrice !== undefined
+        ? {
+            price: {
+              is: {
+                price: {
+                  ...(minPrice !== undefined && { gte: minPrice }),
+                  ...(maxPrice !== undefined && { lte: maxPrice }),
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
+    // 3. ORDENAMIENTO DE PRODUCTOS
+    let orderBy: Prisma.ProductOrderByWithRelationInput[] = [
+      { createdAt: 'desc' },
+    ];
+    if (sortBy) {
+      switch (sortBy) {
+        case 'price-asc':
+          orderBy = [{ price: { price: 'asc' } }];
+          break;
+        case 'price-desc':
+          orderBy = [{ price: { price: 'desc' } }];
+          break;
+        case 'name-asc':
+          orderBy = [{ name: 'asc' }];
+          break;
+        case 'name-desc':
+          orderBy = [{ name: 'desc' }];
+          break;
+      }
+    }
+
+    // 4. CONSULTAS EN PARALELO
+    // Usamos 'baseWhere' en las facetas para que se calculen en base al inicio del contexto
+    // y no se auto-filtren destruyendo las opciones del usuario.
+    const [result, categoryGroups, brandGroups, priceAggregate] =
+      await Promise.all([
+        this.findAll({
+          where: productsWhere, // Los productos reales sí reciben las mutaciones de marca y precio
+          orderBy,
+          include: SEARCH_INCLUDE,
+          pagination: { page, limit },
+        }),
+        this.prisma.product.groupBy({
+          by: ['categoryId'],
+          where: baseWhere, // Estático basado en el contexto inicial
+          _count: { id: true },
+        }),
+        this.prisma.product.groupBy({
+          by: ['brandId'],
+          where: baseWhere, // Estático basado en el contexto inicial
+          _count: { id: true },
+        }),
+        // Agregación correcta a través de la relación inversa 1:1 con ProductPrice
+        this.prisma.productPrice.aggregate({
+          where: {
+            product: baseWhere, // El slider mantendrá los límites iniciales reales
+          },
+          _min: {
+            price: true,
+          },
+          _max: {
+            price: true,
+          },
+        }),
+      ]);
+
+    // 5. OBTENER INFORMACIÓN DE CATEGORÍAS Y MARCAS ENCONTRADAS
+    const categoryIds = categoryGroups.map((g) => g.categoryId);
+    const brandIds = brandGroups
+      .map((g) => g.brandId)
+      .filter((id): id is string => id !== null);
+
+    const [categories, brands] = await Promise.all([
+      categoryIds.length > 0
+        ? this.prisma.category.findMany({
+            where: { id: { in: categoryIds } },
+            select: { id: true, name: true, slug: true },
+          })
+        : ([] as { id: string; name: string; slug: string }[]),
+      brandIds.length > 0
+        ? this.prisma.brand.findMany({
+            where: { id: { in: brandIds } },
+            select: { id: true, name: true, slug: true },
+          })
+        : ([] as { id: string; name: string; slug: string }[]),
+    ]);
+
+    // 6. CONSTRUCCIÓN ESTRUCTURADA DE FACETS (CON CONTROL DE TIPOS DECIMAL -> NUMBER)
+    const facets = {
+      // Si el cliente ya está en una categoría fija vía URL, ocultamos el facet de categorías.
+      // Si está en el buscador global sin categoría fija, se muestran las categorías coincidentes.
+      categories: categoryId
+        ? []
+        : categoryGroups
+            .map((g) => {
+              const cat = categories.find((c) => c.id === g.categoryId);
+              return {
+                id: g.categoryId,
+                name: cat?.name ?? 'Unknown',
+                slug: cat?.slug ?? '',
+                count: g._count.id,
+              };
+            })
+            .filter((c) => c.name !== 'Unknown')
+            .sort((a, b) => b.count - a.count),
+      brands: brandGroups
+        .filter((g) => g.brandId !== null)
+        .map((g) => {
+          const brand = brands.find((b) => b.id === g.brandId);
+          return {
+            id: g.brandId!,
+            name: brand?.name ?? 'Unknown',
+            slug: brand?.slug ?? '',
+            count: g._count.id,
+          };
+        })
+        .filter((b) => b.name !== 'Unknown')
+        .sort((a, b) => b.count - a.count),
+      priceRange: {
+        min: priceAggregate._min?.price ? Number(priceAggregate._min.price) : 0,
+        max: priceAggregate._max?.price ? Number(priceAggregate._max.price) : 0,
+      },
+    };
+
+    return {
+      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+      meta: result.meta,
+      facets,
     };
   }
 
