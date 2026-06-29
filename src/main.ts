@@ -17,6 +17,8 @@ async function bootstrap() {
       'https://admin-werd.vercel.app',
       'https://e-werd.vercel.app',
       'http://localhost:4200',
+      'https://admin-werd-production.up.railway.app',
+      'https://e-werd-production-ee9d.up.railway.app',
     ],
     credentials: true,
   });
