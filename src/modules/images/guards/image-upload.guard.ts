@@ -85,8 +85,11 @@ export class ImageUploadGuard implements CanActivate {
 
     // Customer: solo ORDER_CLAIM con customer_evidence
     if (payload.userType === 'customer') {
-      const allowedEntities: ImageEntityType[] = ['ORDER_CLAIM'];
-      const allowedRoles = ['customer_evidence'];
+      const allowedEntities: ImageEntityType[] = [
+        'ORDER_CLAIM',
+        'ORDER_ITEM_RETURN',
+      ];
+      const allowedRoles = ['customer_evidence', 'return_evidence'];
 
       if (!allowedEntities.includes(entityType)) {
         throw new ForbiddenException(

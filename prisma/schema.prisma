@@ -1169,25 +1169,31 @@ model CustomerRefreshToken {
   @@map("customer_refresh_tokens")
 }
 
+// =============================================================
+// RESEÑAS DE PRODUCTOS
+// =============================================================
+
 model ProductReview {
   id           String    @id @default(uuid())
   productId    String
   customerId   String
-  orderId      String
+  orderId      String?
   rating       Int
   title        String?
   comment      String?
+  history      Json?     // Array de objetos: [{ rating, title, comment, updatedAt }]
   isApproved   Boolean   @default(false)
   reviewedById String?
   reviewedAt   DateTime?
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   product      Product   @relation(fields: [productId], references: [id])
   customer     Customer  @relation(fields: [customerId], references: [id])
-  order        Order     @relation(fields: [orderId], references: [id])
+  order        Order?    @relation(fields: [orderId], references: [id])
   reviewedBy   AdminUser? @relation("ReviewReviewedBy", fields: [reviewedById], references: [id])
 
-  @@unique([productId, customerId, orderId])
+  @@unique([productId, customerId])
   @@index([productId])
   @@index([isApproved])
   @@map("product_reviews")

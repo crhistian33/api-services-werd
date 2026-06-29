@@ -8,6 +8,7 @@ import {
 } from '../../images/services/image-record.service';
 import { ProductPriceService } from './product-price.service';
 import { ProductSpecsService } from './product-specs.service';
+import { ProductReviewService } from '../../product-reviews/service/product-review.service';
 import {
   CreateProductDto,
   UpdateProductDto,
@@ -87,6 +88,7 @@ export class ProductsService extends SluggableService<
     private readonly imageRecord: ImageRecordService,
     private readonly priceService: ProductPriceService,
     private readonly specsService: ProductSpecsService,
+    private readonly reviewService: ProductReviewService,
   ) {
     super(prisma, 'product');
   }
@@ -530,7 +532,22 @@ export class ProductsService extends SluggableService<
 
   async findProductBySlug(slug: string) {
     const product = await this.findBySlug(slug, DETAIL_INCLUDE);
-    return this.imageRecord.attachImagesToEntity(product, ENTITY_TYPE);
+    const productWithImages = await this.imageRecord.attachImagesToEntity(
+      product,
+      ENTITY_TYPE,
+    );
+
+    // Agregar rating y reseñas aprobadas
+    const reviewsStats = await this.reviewService.getProductReviewsStats(
+      product.id,
+    );
+
+    return {
+      ...productWithImages,
+      rating: reviewsStats.rating,
+      totalReviews: reviewsStats.totalReviews,
+      reviews: reviewsStats.reviews,
+    };
   }
 
   // ═══════════════════════════════════════════════

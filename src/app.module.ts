@@ -24,6 +24,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NewsletterModule } from './modules/newsletter/newsletter.module';
+import { ProductReviewsModule } from './modules/product-reviews/product-reviews.module';
 import { ComplaintsService } from './modules/complaints/service/complaints.service';
 import { ComplaintsController } from './modules/complaints/controller/complaints.controller';
 
@@ -57,6 +58,7 @@ import { ComplaintsController } from './modules/complaints/controller/complaints
     OrdersModule,
     DashboardModule,
     NewsletterModule,
+    ProductReviewsModule,
   ],
   controllers: [AppController, ComplaintsController],
   providers: [AppService, ComplaintsService],
