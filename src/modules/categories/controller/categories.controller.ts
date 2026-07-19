@@ -70,6 +70,16 @@ export class CategoriesController {
     return this.categoriesService.findAllCategoriesPublic(query);
   }
 
+  @Public()
+  @Get('products')
+  @ResponseMessage('Categorías con productos obtenidas exitosamente')
+  @ApiOperation({
+    summary: 'Obtener categorías con sus productos más recientes',
+  })
+  getCategoriesWithProducts() {
+    return this.categoriesService.getCategoriesWithProducts();
+  }
+
   // ═══════════════════════════════════════════════
   // BULK (ANTES DE :id)
   // ═══════════════════════════════════════════════

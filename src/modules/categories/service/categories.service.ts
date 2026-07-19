@@ -124,6 +124,63 @@ export class CategoriesService extends SluggableService<
   }
 
   // ═══════════════════════════════════════════════
+  // getCategoriesWithProducts
+  // ═══════════════════════════════════════════════
+
+  async getCategoriesWithProducts() {
+    const categories = await this.prisma.category.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        products: {
+          some: {
+            status: 'active',
+            deletedAt: null,
+          },
+        },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: { select: { products: true, children: true } },
+        products: {
+          where: {
+            status: 'active',
+            deletedAt: null,
+          },
+          take: 8,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            brand: { select: { id: true, name: true, slug: true } },
+            category: { select: { id: true, name: true, slug: true } },
+            price: true,
+            features: { orderBy: { sortOrder: 'asc' } },
+          },
+        },
+      },
+    });
+
+    const validCategories = categories.filter((c) => c.products.length > 0);
+
+    const categoriesWithImages = await this.imageRecord.attachImagesToMany(
+      validCategories,
+      ENTITY_TYPE,
+    );
+
+    const allProducts = validCategories.flatMap((c) => c.products);
+    const productsWithImages = await this.imageRecord.attachImagesToMany(
+      allProducts,
+      ImageEntityType.PRODUCT,
+    );
+
+    const productsById = new Map(productsWithImages.map((p) => [p.id, p]));
+
+    return categoriesWithImages.map((cat) => ({
+      ...cat,
+      products: cat.products.map((p) => productsById.get(p.id)!),
+    }));
+  }
+
+  // ═══════════════════════════════════════════════
   // findCategoryById
   // ═══════════════════════════════════════════════
 
