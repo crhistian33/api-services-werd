@@ -6,11 +6,13 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception/prisma-
 import { HttpExceptionFilter } from './common/filters/http-exception/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response/response.interceptor';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
+  app.use(compression());
 
   app.enableCors({
     origin: [

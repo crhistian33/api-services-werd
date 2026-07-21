@@ -39,6 +39,10 @@ import { ComplaintsController } from './modules/complaints/controller/complaints
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
+      serveStaticOptions: {
+        maxAge: '1y',
+        immutable: true,
+      },
     }),
     PrismaModule,
     ImagesModule,
