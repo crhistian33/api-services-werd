@@ -18,7 +18,7 @@ async function bootstrap() {
       'https://e-werd.pages.dev',
       /^https:\/\/.*\.e-werd\.pages\.dev$/, // previews
       'http://localhost:4200',
-      'https://admin-werd-production.up.railway.app/',
+      'https://admin-werd-production.up.railway.app',
       // 'https://admin-werd-production.up.railway.app',
       // 'https://e-werd-production-ee9d.up.railway.app',
     ],
