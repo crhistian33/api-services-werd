@@ -1,5 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from 'generated/prisma/client';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { OrderStatus, Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { QueryReviewDto } from '../dto/query-review.dto';
@@ -26,18 +30,52 @@ export class ProductReviewService {
       throw new NotFoundException('Producto no encontrado');
     }
 
-    // Buscar reseña existente del cliente para este producto
-    const existingReview = await this.prisma.productReview.findUnique({
+    // Verificar que el cliente compró y recibió este producto en alguna orden
+    const purchasedItem = await this.prisma.orderItem.findFirst({
       where: {
-        productId_customerId: {
-          productId,
+        productId,
+        order: {
           customerId,
+          status: OrderStatus.delivered,
         },
       },
+      select: { orderId: true },
+      orderBy: { order: { deliveredAt: 'desc' } },
+    });
+
+    if (!purchasedItem) {
+      throw new ForbiddenException(
+        'Solo puedes reseñar productos de pedidos entregados',
+      );
+    }
+
+    // Si el frontend mandó un orderId explícito (ej. desde el detalle de una orden puntual),
+    // validar que esa orden sea del cliente, contenga el producto, y esté entregada
+    let resolvedOrderId = purchasedItem.orderId;
+    if (orderId) {
+      const specificOrder = await this.prisma.order.findFirst({
+        where: {
+          id: orderId,
+          customerId,
+          status: OrderStatus.delivered,
+          items: { some: { productId } },
+        },
+        select: { id: true },
+      });
+      if (!specificOrder) {
+        throw new ForbiddenException(
+          'Esa orden no corresponde a este producto, cliente, o aún no ha sido entregada',
+        );
+      }
+      resolvedOrderId = specificOrder.id;
+    }
+
+    // Buscar reseña existente del cliente para este producto
+    const existingReview = await this.prisma.productReview.findUnique({
+      where: { productId_customerId: { productId, customerId } },
     });
 
     if (existingReview) {
-      // === ACTUALIZACIÓN: guardar historial antes de sobreescribir ===
       const historyEntry = {
         rating: existingReview.rating,
         title: existingReview.title,
@@ -54,43 +92,93 @@ export class ProductReviewService {
           rating,
           title: title ?? null,
           comment: comment ?? null,
-          orderId: orderId ?? existingReview.orderId,
-          isApproved: false, // Cada actualización requiere re-aprobación
+          orderId: resolvedOrderId,
+          isApproved: false,
           history: [...previousHistory, historyEntry] as Prisma.InputJsonValue,
         },
         include: {
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
+          customer: { select: { id: true, firstName: true, lastName: true } },
         },
       });
     }
 
-    // === CREACIÓN NUEVA ===
     return this.prisma.productReview.create({
       data: {
         productId,
         customerId,
-        orderId: orderId ?? null,
+        orderId: resolvedOrderId,
         rating,
         title: title ?? null,
         comment: comment ?? null,
         isApproved: false,
       },
       include: {
-        customer: {
+        customer: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+  }
+
+  async getReviewStatusForOrder(customerId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, customerId },
+      select: {
+        id: true,
+        status: true,
+        items: {
           select: {
-            id: true,
-            firstName: true,
-            lastName: true,
+            productId: true,
+            productName: true,
+            productImageUrl: true,
           },
         },
       },
     });
+
+    if (!order) {
+      throw new NotFoundException('Pedido no encontrado');
+    }
+
+    const productIds = order.items.map((item) => item.productId);
+
+    // Trae de una sola vez todas las reviews existentes del cliente para estos productos
+    const existingReviews = productIds.length
+      ? await this.prisma.productReview.findMany({
+          where: {
+            customerId,
+            productId: { in: productIds },
+          },
+        })
+      : [];
+
+    const reviewsByProduct = new Map(
+      existingReviews.map((review) => [review.productId, review]),
+    );
+
+    const canReviewOrder = order.status === OrderStatus.delivered;
+
+    return {
+      orderId: order.id,
+      canReviewOrder,
+      items: order.items.map((item) => {
+        const existing = reviewsByProduct.get(item.productId) ?? null;
+        return {
+          productId: item.productId,
+          productName: item.productName,
+          productImageUrl: item.productImageUrl,
+          canReview: canReviewOrder,
+          review: existing
+            ? {
+                id: existing.id,
+                rating: existing.rating,
+                title: existing.title,
+                comment: existing.comment,
+                isApproved: existing.isApproved,
+                updatedAt: existing.updatedAt,
+              }
+            : null,
+        };
+      }),
+    };
   }
 
   /**
@@ -224,9 +312,9 @@ export class ProductReviewService {
         rating: review.rating,
         title: review.title,
         comment: review.comment,
-        history: review.history as Prisma.InputJsonValue | null,
+        //history: review.history as Prisma.InputJsonValue | null,
         createdAt: review.createdAt,
-        updatedAt: review.updatedAt as Date,
+        updatedAt: review.updatedAt,
         customer: {
           id: review.customer.id,
           firstName: review.customer.firstName,
@@ -234,5 +322,33 @@ export class ProductReviewService {
         },
       })),
     };
+  }
+
+  /**
+   * Obtiene el rating promedio y conteo de reseñas aprobadas para una lista de productos.
+   */
+  async getProductsReviewsStatsBulk(productIds: string[]) {
+    if (!productIds || productIds.length === 0) {
+      return new Map<string, { rating: number; reviewsCount: number }>();
+    }
+
+    const aggregations = await this.prisma.productReview.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { in: productIds },
+        isApproved: true,
+      },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+
+    const map = new Map<string, { rating: number; reviewsCount: number }>();
+    for (const agg of aggregations) {
+      map.set(agg.productId, {
+        rating: agg._avg.rating ? Number(agg._avg.rating.toFixed(1)) : 0,
+        reviewsCount: agg._count.rating ?? 0,
+      });
+    }
+    return map;
   }
 }

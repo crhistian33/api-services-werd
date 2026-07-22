@@ -21,6 +21,7 @@ import { ProductReviewService } from '../service/product-review.service';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { QueryReviewDto } from '../dto/query-review.dto';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator';
+import { Public } from '../../../common/decorators/public.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
@@ -48,6 +49,38 @@ export class ProductReviewsController {
     @CurrentUser() customer: CustomerJwtPayload,
   ) {
     return this.productReviewService.upsertReview(customer.sub, dto);
+  }
+
+  @Get('order/:orderId')
+  @ApiBearerAuth('access-token')
+  @ResponseMessage('Estado de reseñas del pedido obtenido exitosamente')
+  @ApiOperation({
+    summary:
+      'Obtener estado de reseñas por producto para un pedido (Cliente autenticado)',
+    description:
+      'Devuelve, por cada producto del pedido, si el cliente puede reseñarlo y su reseña existente si la tiene.',
+  })
+  @ApiParam({ name: 'orderId', description: 'UUID del pedido' })
+  async getReviewStatusForOrder(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @CurrentUser() customer: CustomerJwtPayload,
+  ) {
+    return this.productReviewService.getReviewStatusForOrder(
+      customer.sub,
+      orderId,
+    );
+  }
+
+  @Public()
+  @Get('product/:productId')
+  @ApiOperation({
+    summary: 'Obtener rating y reseñas aprobadas de un producto (Público)',
+    description:
+      'Usado por la página de detalle de producto. No requiere autenticación.',
+  })
+  @ApiParam({ name: 'productId', description: 'UUID del producto' })
+  async getProductStats(@Param('productId', ParseUUIDPipe) productId: string) {
+    return this.productReviewService.getProductReviewsStats(productId);
   }
 
   // ═══════════════════════════════════════════════

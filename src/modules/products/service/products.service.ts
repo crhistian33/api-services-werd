@@ -510,8 +510,26 @@ export class ProductsService extends SluggableService<
       },
     };
 
+    const productsWithImages = await this.imageRecord.attachImagesToMany(
+      result.data,
+      ENTITY_TYPE,
+    );
+
+    const productIds = productsWithImages.map((p) => p.id);
+    const reviewsStatsMap =
+      await this.reviewService.getProductsReviewsStatsBulk(productIds);
+
+    const productsWithStats = productsWithImages.map((p) => {
+      const stats = reviewsStatsMap.get(p.id);
+      return {
+        ...p,
+        rating: stats?.rating ?? 0,
+        reviewsCount: stats?.reviewsCount ?? 0,
+      };
+    });
+
     return {
-      data: await this.imageRecord.attachImagesToMany(result.data, ENTITY_TYPE),
+      data: productsWithStats,
       meta: result.meta,
       facets,
     };
@@ -545,6 +563,7 @@ export class ProductsService extends SluggableService<
     return {
       ...productWithImages,
       rating: reviewsStats.rating,
+      reviewsCount: reviewsStats.totalReviews,
       totalReviews: reviewsStats.totalReviews,
       reviews: reviewsStats.reviews,
     };

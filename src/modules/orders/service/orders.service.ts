@@ -362,6 +362,28 @@ export class OrdersService extends BaseService<
     return record;
   }
 
+  async findMyOrderByIdentifier(
+    identifier: string,
+    customerId: string,
+  ): Promise<OrderEntity> {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        identifier,
+      );
+
+    const record = (await this.prisma.order.findFirst({
+      where: isUuid
+        ? { id: identifier, customerId }
+        : { orderNumber: identifier, customerId },
+      include: ORDER_INCLUDE,
+    })) as OrderEntity | null;
+
+    if (!record) {
+      throw new NotFoundException(`Pedido "${identifier}" no encontrado`);
+    }
+    return record;
+  }
+
   async findMyOrders(customerId: string, query: QueryOrderDto) {
     return this.findAll({
       where: {

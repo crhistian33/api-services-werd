@@ -142,9 +142,12 @@ export class OrdersController {
   @ApiBearerAuth('access-token')
   @ResponseMessage('Pedido obtenido exitosamente')
   @ApiOperation({ summary: 'Obtener detalle completo de un pedido' })
-  @ApiParam({ name: 'id', description: 'UUID del pedido' })
-  findOneOrder(@Param('id', ParseUUIDPipe) id: string) {
-    return this.ordersService.findOrderById(id);
+  @ApiParam({ name: 'id', description: 'UUID o número de pedido' })
+  findOneOrder(
+    @Param('id') identifier: string,
+    @CurrentUser() customer: CustomerJwtPayload,
+  ) {
+    return this.ordersService.findMyOrderByIdentifier(identifier, customer.sub);
   }
 
   // ═══════════════════════════════════════════════════════════

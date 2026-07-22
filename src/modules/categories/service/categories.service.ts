@@ -172,7 +172,44 @@ export class CategoriesService extends SluggableService<
       ImageEntityType.PRODUCT,
     );
 
-    const productsById = new Map(productsWithImages.map((p) => [p.id, p]));
+    const productIds = productsWithImages.map((p) => p.id);
+    const aggregations =
+      productIds.length > 0
+        ? await this.prisma.productReview.groupBy({
+            by: ['productId'],
+            where: {
+              productId: { in: productIds },
+              isApproved: true,
+            },
+            _avg: { rating: true },
+            _count: { rating: true },
+          })
+        : [];
+
+    const statsMap = new Map<
+      string,
+      { rating: number; reviewsCount: number }
+    >();
+    for (const agg of aggregations) {
+      statsMap.set(agg.productId, {
+        rating: agg._avg.rating ? Number(agg._avg.rating.toFixed(1)) : 0,
+        reviewsCount: agg._count.rating ?? 0,
+      });
+    }
+
+    const productsById = new Map(
+      productsWithImages.map((p) => {
+        const stats = statsMap.get(p.id);
+        return [
+          p.id,
+          {
+            ...p,
+            rating: stats?.rating ?? 0,
+            reviewsCount: stats?.reviewsCount ?? 0,
+          },
+        ];
+      }),
+    );
 
     return categoriesWithImages.map((cat) => ({
       ...cat,
