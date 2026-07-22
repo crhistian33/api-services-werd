@@ -274,45 +274,42 @@ export class ProductReviewService {
    * Obtiene el rating promedio y las reseñas aprobadas de un producto.
    * Usado por el servicio público de productos.
    */
-  async getProductReviewsStats(productId: string) {
+  async getProductReviewsStats(
+    productId: string,
+    page: number = 1,
+    limit: number = 5,
+  ) {
+    const skip = (page - 1) * limit;
+
     const [aggregation, reviews] = await Promise.all([
       this.prisma.productReview.aggregate({
-        where: {
-          productId,
-          isApproved: true,
-        },
+        where: { productId, isApproved: true },
         _avg: { rating: true },
         _count: { rating: true },
       }),
       this.prisma.productReview.findMany({
-        where: {
-          productId,
-          isApproved: true,
-        },
-        orderBy: { createdAt: 'desc' },
+        where: { productId, isApproved: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: limit,
         include: {
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
+          customer: { select: { id: true, firstName: true, lastName: true } },
         },
       }),
     ]);
+
+    const totalReviews = aggregation._count.rating;
 
     return {
       rating: aggregation._avg.rating
         ? Number(aggregation._avg.rating.toFixed(1))
         : 0,
-      totalReviews: aggregation._count.rating,
+      totalReviews,
       reviews: reviews.map((review) => ({
         id: review.id,
         rating: review.rating,
         title: review.title,
         comment: review.comment,
-        //history: review.history as Prisma.InputJsonValue | null,
         createdAt: review.createdAt,
         updatedAt: review.updatedAt,
         customer: {
@@ -321,6 +318,9 @@ export class ProductReviewService {
           lastName: review.customer.lastName,
         },
       })),
+      page,
+      limit,
+      hasMore: skip + reviews.length < totalReviews,
     };
   }
 

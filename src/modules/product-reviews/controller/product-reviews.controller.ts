@@ -26,6 +26,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminRole } from '../../auth/constants/admin-role.constant';
 import type { CustomerJwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import { QueryReviewStatsDto } from '../dto';
 
 @ApiTags('Product Reviews')
 @Controller('product-reviews')
@@ -79,8 +80,15 @@ export class ProductReviewsController {
       'Usado por la página de detalle de producto. No requiere autenticación.',
   })
   @ApiParam({ name: 'productId', description: 'UUID del producto' })
-  async getProductStats(@Param('productId', ParseUUIDPipe) productId: string) {
-    return this.productReviewService.getProductReviewsStats(productId);
+  async getProductStats(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Query() query: QueryReviewStatsDto,
+  ) {
+    return this.productReviewService.getProductReviewsStats(
+      productId,
+      query.page,
+      query.limit,
+    );
   }
 
   // ═══════════════════════════════════════════════
