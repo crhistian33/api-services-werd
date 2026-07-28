@@ -27,6 +27,7 @@ import { NewsletterModule } from './modules/newsletter/newsletter.module';
 import { ProductReviewsModule } from './modules/product-reviews/product-reviews.module';
 import { ComplaintsService } from './modules/complaints/service/complaints.service';
 import { ComplaintsController } from './modules/complaints/controller/complaints.controller';
+import { CartModule } from './modules/cart/cart.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ComplaintsController } from './modules/complaints/controller/complaints
     DashboardModule,
     NewsletterModule,
     ProductReviewsModule,
+    CartModule,
   ],
   controllers: [AppController, ComplaintsController],
   providers: [AppService, ComplaintsService],

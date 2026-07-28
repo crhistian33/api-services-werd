@@ -7,6 +7,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { MailService } from '../../mail/service/mail.service';
 import { ConfirmManualPaymentDto } from '../dto/confirm-payment.dto';
 import { PaymentMethodType } from 'generated/prisma/client';
+import { CartService } from '../../cart/service/cart.service';
 
 // Tipos de pago que requieren confirmación manual por el admin.
 // 'card' se procesa automáticamente por la pasarela (Culqi, etc.)
@@ -23,6 +24,7 @@ export class OrderPaymentConfirmationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly cartService: CartService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -78,6 +80,9 @@ export class OrderPaymentConfirmationService {
           }),
         },
       });
+
+      const linkedCart = await this.cartService.findByOrderId(orderId, tx);
+      if (linkedCart) await this.cartService.markCompleted(linkedCart.id, tx);
 
       // Actualizar transacción de pago existente o crear una nueva
       const existingTransaction = await tx.orderPaymentTransaction.findFirst({

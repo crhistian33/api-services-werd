@@ -33,6 +33,7 @@ import {
   PAYMENT_METHOD_TYPE_LABELS,
   CANCELLATION_REASON_LABELS,
 } from '../constants/order-labels.constants';
+import { CartService } from 'src/modules/cart/service/cart.service';
 
 // ─────────────────────────────────────────────────────────────
 // TIPO DE ENTIDAD
@@ -177,6 +178,7 @@ export class OrdersService extends BaseService<
     private readonly imageRecordService: ImageRecordService,
     private readonly mailService: MailService,
     private readonly config: ConfigService,
+    private readonly cartService: CartService,
   ) {
     super(prisma, 'order');
   }
@@ -184,7 +186,10 @@ export class OrdersService extends BaseService<
   // ── URL base del storefront (desde .env) ────────────────────
   // .env: STORE_FRONTEND_URL=https://tienda.werd.com
   private get storeFrontendUrl(): string {
-    return this.config.get<string>('STORE_FRONTEND_URL', 'https://werd.com');
+    return this.config.get<string>(
+      'STORE_FRONTEND_URL',
+      'https://e-werd.pages.dev',
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -595,6 +600,21 @@ export class OrdersService extends BaseService<
         include: ORDER_INCLUDE,
       });
 
+      // ── NUEVO: enlazar el carrito del cliente (si es cliente registrado) ──
+      if (customerId) {
+        const activeCart = await this.cartService.findActiveCartForCheckout(
+          customerId,
+          tx,
+        );
+        if (activeCart) {
+          await this.cartService.markCheckoutInProgress(
+            activeCart.id,
+            order.id,
+            tx,
+          );
+        }
+      }
+
       // ── 10. Decrementar stock ───────────────────────────────
       await this.decrementStock(tx, orderItems);
 
@@ -822,6 +842,12 @@ export class OrdersService extends BaseService<
         },
       });
 
+      if (!wasPaid) {
+        const linkedCart = await this.cartService.findByOrderId(orderId, tx);
+        if (linkedCart)
+          await this.cartService.abandonCheckout(linkedCart.id, tx);
+      }
+
       await this.incrementStock(tx, order.items);
 
       // ✅ Revertir uso del cupón si existe
@@ -937,6 +963,10 @@ export class OrdersService extends BaseService<
 
         if (status === OrderStatus.cancelled) {
           await this.incrementStock(tx, currentOrder.items);
+
+          const linkedCart = await this.cartService.findByOrderId(id, tx);
+          if (linkedCart)
+            await this.cartService.abandonCheckout(linkedCart.id, tx);
         }
 
         await tx.orderStatusHistory.create({
@@ -1025,6 +1055,10 @@ export class OrdersService extends BaseService<
         where: { id: orderId },
         data: { status: OrderStatus.paid, paidAt: new Date() },
       });
+
+      // ── NUEVO ──
+      const linkedCart = await this.cartService.findByOrderId(orderId, tx);
+      if (linkedCart) await this.cartService.markCompleted(linkedCart.id, tx);
 
       await tx.orderStatusHistory.create({
         data: {

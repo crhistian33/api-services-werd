@@ -10,9 +10,10 @@ import { OrderRefundService } from './service/order-refund.service';
 import { OrderPaymentConfirmationService } from './service/order-payment-confirmation.service';
 import { OrderPaymentExpiryService } from './service/order-payment-expiry.service';
 import { CulqiService } from './service/culqi.service';
+import { CartModule } from '../cart/cart.module';
 
 @Module({
-  imports: [PrismaModule, ImagesModule, MailModule],
+  imports: [PrismaModule, ImagesModule, MailModule, CartModule],
   controllers: [OrdersController],
   providers: [
     OrdersService,

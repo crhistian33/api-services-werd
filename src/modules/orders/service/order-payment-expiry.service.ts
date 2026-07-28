@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { MailService } from '../../mail/service/mail.service';
 import { ConfigService } from '@nestjs/config';
+import { CartService } from '../../cart/service/cart.service';
 
 // Horas antes del vencimiento para enviar el recordatorio
 const REMINDER_HOURS_BEFORE_EXPIRY = 6;
@@ -15,6 +16,7 @@ export class OrderPaymentExpiryService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     private readonly config: ConfigService,
+    private readonly cartService: CartService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════
@@ -183,6 +185,10 @@ export class OrderPaymentExpiryService {
             where: { orderId: order.id, status: 'pending' },
             data: { status: 'failed' },
           });
+
+          const linkedCart = await this.cartService.findByOrderId(order.id, tx);
+          if (linkedCart)
+            await this.cartService.abandonCheckout(linkedCart.id, tx);
 
           // Registrar en historial de estados
           await tx.orderStatusHistory.create({
