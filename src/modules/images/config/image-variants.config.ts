@@ -34,7 +34,7 @@ export const VARIANT_CONFIGS: Record<
     large: 1000, // imagen principal PDP
     medium: 480, // cards homepage, PLP listado
     thumb: 120, // miniaturas galería en PDP
-    cart: 80, // carrito, checkout, email transaccional
+    //cart: 80, // carrito, checkout, email transaccional
   },
 
   // ── CATEGORY ──────────────────────────────────────────────

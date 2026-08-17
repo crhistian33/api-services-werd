@@ -5,6 +5,12 @@ export interface ImageRoleConfig {
   maxCount: number;
   allowedMimeTypes: string[];
   maxSizeBytes: number;
+  // Resolución mínima exigida en la foto ORIGINAL subida por el admin.
+  // Debe ser >= al lado mayor de la variante más grande definida en
+  // image-variants.config.ts para esa entidad, o el `fit: 'contain'`
+  // termina generando canvases con relleno blanco excesivo.
+  minWidth?: number;
+  minHeight?: number;
 }
 
 export interface EntityImageConfig {
@@ -21,6 +27,8 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
         maxCount: 1,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 2 * 1024 * 1024,
+        minWidth: 600, // = variante 'medium' de category
+        minHeight: 600,
       },
     ],
   },
@@ -37,6 +45,8 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
           'image/svg+xml',
         ],
         maxSizeBytes: 2 * 1024 * 1024,
+        minWidth: 400, // = variante 'medium' de brand (no aplica si el logo es SVG)
+        minHeight: 400,
       },
     ],
   },
@@ -48,12 +58,16 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
         maxCount: 1,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 5 * 1024 * 1024,
+        minWidth: 1000, // = variante 'large' de product
+        minHeight: 1000,
       },
       {
         role: 'gallery',
         maxCount: 3,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 5 * 1024 * 1024,
+        minWidth: 1000,
+        minHeight: 1000,
       },
     ],
   },
@@ -92,12 +106,16 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
         maxCount: 1,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 5 * 1024 * 1024,
+        minWidth: 1440, // = variante 'large' de hero_slide_desktop
+        minHeight: 500, // banners suelen ser panorámicos, no forzar cuadrado
       },
       {
         role: 'mobile',
         maxCount: 1,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 3 * 1024 * 1024,
+        minWidth: 600, // = variante 'large' de hero_slide_mobile
+        minHeight: 600,
       },
     ],
   },
@@ -109,6 +127,8 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
         maxCount: 1,
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
         maxSizeBytes: 2 * 1024 * 1024,
+        minWidth: 160, // = variante 'medium' de user
+        minHeight: 160,
       },
     ],
   },

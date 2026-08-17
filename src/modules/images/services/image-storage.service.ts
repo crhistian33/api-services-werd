@@ -3,18 +3,19 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { join, extname, dirname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import {
-  rename,
-  unlink,
-  access,
-  copyFile,
-  writeFile,
-  mkdir,
-} from 'fs/promises';
+import { extname } from 'path';
+import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  GetObjectCommandOutput,
+  DeleteObjectCommand,
+  CopyObjectCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3';
 import { ImageEntityType } from 'generated/prisma/client';
 import { IMAGE_CONFIGS, ImageRoleConfig } from '../config/image-config';
 import {
@@ -26,6 +27,7 @@ import {
 } from '../config/image-variants.config';
 
 export interface SavedTempImage {
+  // KEY del objeto en R2 (ej: "temp/uuid.jpg"), no una ruta de filesystem.
   tempPath: string;
   url: string;
   metadata: {
@@ -37,32 +39,44 @@ export interface SavedTempImage {
   };
 }
 
-// ── MovedImage ahora incluye variants y isSvg ──
 export interface MovedImage {
-  finalPath: string;
+  finalPath: string; // key del objeto "original" en R2
   url: string;
-  variants: Record<string, string>; // { original, large, medium, thumb, ... }
+  variants: Record<string, string>; // { original: url, large: url, medium: url, ... }
   isSvg: boolean;
 }
 
 @Injectable()
 export class ImageStorageService {
-  private readonly uploadsRoot = join(process.cwd(), 'uploads');
-  private readonly tempDir = join(this.uploadsRoot, 'temp');
-  private readonly imagesDir = join(this.uploadsRoot, 'images');
+  private readonly s3: S3Client;
+  private readonly bucket: string;
+  private readonly publicUrl: string;
 
-  constructor() {
-    this.ensureDirSync(this.tempDir);
-    this.ensureDirSync(this.imagesDir);
-  }
+  constructor(private readonly config: ConfigService) {
+    const accountId = this.config.get<string>('r2.accountId');
+    const bucket = this.config.get<string>('r2.bucketName');
+    const publicUrl = this.config.get<string>('r2.publicUrl');
 
-  // ── sin cambios ─────────────────────────────────────────────────────────────
-
-  private ensureDirSync(dir: string): void {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    if (!accountId || !bucket || !publicUrl) {
+      throw new Error(
+        'Configuración de R2 incompleta: revisa R2_ACCOUNT_ID, R2_BUCKET_NAME y R2_PUBLIC_URL',
+      );
     }
+
+    this.bucket = bucket;
+    this.publicUrl = publicUrl.replace(/\/$/, '');
+
+    this.s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: this.config.get<string>('r2.accessKeyId')!,
+        secretAccessKey: this.config.get<string>('r2.secretAccessKey')!,
+      },
+    });
   }
+
+  // ── sin cambios respecto a la versión local ──────────────────────────────
 
   validateFile(file: Express.Multer.File, roleConfig: ImageRoleConfig): void {
     if (!roleConfig.allowedMimeTypes.includes(file.mimetype)) {
@@ -94,6 +108,11 @@ export class ImageStorageService {
     return roleConfig;
   }
 
+  // ═══════════════════════════════════════════════
+  // saveTempImage — sube el buffer original a R2 bajo temp/
+  // (misma firma que la versión local; el controller no cambia)
+  // ═══════════════════════════════════════════════
+
   async saveTempImage(
     file: Express.Multer.File,
     entityKey: string,
@@ -103,14 +122,13 @@ export class ImageStorageService {
     this.validateFile(file, roleConfig);
 
     const ext = extname(file.originalname).toLowerCase() || '.jpg';
-    const filename = `${uuidv4()}${ext}`;
-    const tempPath = join(this.tempDir, filename);
+    const key = `temp/${uuidv4()}${ext}`;
 
     let metadata: SavedTempImage['metadata'];
 
     try {
       if (file.mimetype === 'image/svg+xml') {
-        await writeFile(tempPath, file.buffer);
+        await this.putObject(key, file.buffer, file.mimetype);
         metadata = {
           width: 0,
           height: 0,
@@ -119,12 +137,14 @@ export class ImageStorageService {
           mimeType: file.mimetype,
         };
       } else {
-        const sharpMeta = await sharp(file.buffer).toFile(tempPath);
+        // leemos metadata con sharp (sin escribir a disco) y subimos el buffer original tal cual
+        const sharpMeta = await sharp(file.buffer).metadata();
+        await this.putObject(key, file.buffer, file.mimetype);
         metadata = {
-          width: sharpMeta.width,
-          height: sharpMeta.height,
-          size: sharpMeta.size,
-          format: sharpMeta.format,
+          width: sharpMeta.width ?? 0,
+          height: sharpMeta.height ?? 0,
+          size: file.size,
+          format: sharpMeta.format ?? 'unknown',
           mimeType: file.mimetype,
         };
       }
@@ -132,71 +152,75 @@ export class ImageStorageService {
       throw new InternalServerErrorException('Error al procesar la imagen');
     }
 
-    const url = `/uploads/temp/${filename}`;
-    return { tempPath, url, metadata };
+    return { tempPath: key, url: this.toPublicUrl(key), metadata };
   }
 
-  async deleteFile(filePath: string): Promise<void> {
+  // ═══════════════════════════════════════════════
+  // deleteFile — ahora recibe una KEY de R2, no una ruta de disco
+  // ═══════════════════════════════════════════════
+
+  async deleteFile(key: string | null | undefined): Promise<void> {
+    if (!key) return;
     try {
-      await access(filePath);
-      await unlink(filePath);
+      await this.s3.send(
+        new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
     } catch {
-      // Si no existe, no es error
+      // si no existe, no es error
     }
   }
 
-  // ── NUEVO: moveTempToFinal con generación de variantes ──────────────────────
-
   /**
-   * Mueve la imagen de /temp/ a su carpeta final y genera todas las variantes
-   * definidas en VARIANT_CONFIGS para la entidad + rol.
-   *
-   * Estructura de carpetas resultante:
-   *   uploads/images/{entityKey}/{variantName}/{uuid}.webp
-   *   uploads/images/{entityKey}/original/{uuid}.svg  ← solo si es SVG
-   *
-   * @param tempPath  Ruta absoluta del archivo temporal
-   * @param entityType  Enum Prisma: PRODUCT, CATEGORY, etc.
-   * @param imageRole   Rol: main, gallery, desktop, mobile, logo, avatar, etc.
-   * @param mimeType    MimeType original — detecta SVG para saltear Sharp
+   * Igual que deleteFile, pero recibe una URL pública completa
+   * (así son guardados los `variants` en metadata) y deriva la key.
+   * Úsalo en vez de deleteFile() cuando lo que tienes es una URL.
    */
+  async deleteByUrl(url: string | null | undefined): Promise<void> {
+    const key = this.extractKey(url);
+    if (key) await this.deleteFile(key);
+  }
+
+  // ═══════════════════════════════════════════════
+  // moveTempToFinal — descarga el temporal desde R2, genera variantes
+  // en memoria y las sube a su carpeta final
+  // ═══════════════════════════════════════════════
+
   async moveTempToFinal(
-    tempPath: string,
+    tempKey: string,
     entityType: ImageEntityType,
     imageRole: string,
     mimeType: string,
     options: { keepTemp?: boolean } = {},
   ): Promise<MovedImage> {
-    const entityKey = entityType.toLowerCase(); // 'product', 'category'
-    const variantKey = this.resolveVariantKey(entityKey, imageRole); // 'product' | 'hero_slide_desktop'
+    const entityKey = entityType.toLowerCase();
+    const variantKey = this.resolveVariantKey(entityKey, imageRole);
     const formatConfig = FORMAT_CONFIGS[variantKey] ?? {
       quality: 85,
       skipVariantsIfSvg: false,
     };
     const isSvg = mimeType === 'image/svg+xml';
 
-    // ── SVG: mover a /original/ sin pasar por Sharp ──────────────────────────
+    // ── SVG: copiar directo, sin pasar por Sharp ─────────────────────────────
     if (isSvg && formatConfig.skipVariantsIfSvg) {
-      const moved = await this.moveSvgToFinal(tempPath, entityKey);
-      if (!options.keepTemp) {
-        await this.deleteFile(tempPath);
-      }
+      const moved = await this.moveSvgToFinal(tempKey, entityKey);
+      if (!options.keepTemp) await this.deleteFile(tempKey);
       return moved;
     }
 
-    // ── Raster: generar variantes con Sharp ──────────────────────────────────
+    // ── Raster: bajar el buffer y generar variantes con Sharp ────────────────
+    const sourceBuffer = await this.getObjectBuffer(tempKey);
     const variants = await this.generateVariants(
-      tempPath,
+      sourceBuffer,
       entityKey,
       variantKey,
     );
 
     if (!options.keepTemp) {
-      await unlink(tempPath).catch(() => null);
+      await this.deleteFile(tempKey);
     }
 
     return {
-      finalPath: variants.original.fullPath,
+      finalPath: variants.original.key,
       url: variants.original.url,
       variants: Object.fromEntries(
         Object.entries(variants).map(([name, data]) => [name, data.url]),
@@ -205,133 +229,175 @@ export class ImageStorageService {
     };
   }
 
-  // ── NUEVO: resolveVariantKey ─────────────────────────────────────────────────
-
-  /**
-   * Resuelve la clave de VARIANT_CONFIGS a partir de entityKey + imageRole.
-   *
-   * Ejemplos:
-   *   hero_slide + desktop  →  'hero_slide_desktop'  (clave compuesta, existe)
-   *   hero_slide + mobile   →  'hero_slide_mobile'   (clave compuesta, existe)
-   *   product    + main     →  'product'             (compuesta no existe, fallback)
-   *   product    + gallery  →  'product'             (compuesta no existe, fallback)
-   *   category   + main     →  'category'            (compuesta no existe, fallback)
-   */
   private resolveVariantKey(entityKey: string, imageRole: string): string {
     const compoundKey = `${entityKey}_${imageRole}`;
     if (VARIANT_CONFIGS[compoundKey]) return compoundKey;
-    if (VARIANT_CONFIGS[entityKey]) return entityKey;
     return entityKey;
   }
 
-  // ── NUEVO: generateVariants ──────────────────────────────────────────────────
-
-  /**
-   * Genera todas las variantes definidas en VARIANT_CONFIGS[variantKey].
-   * Cada variante se guarda en: uploads/images/{entityKey}/{variantName}/{uuid}.webp
-   *
-   * Retorna un mapa de variantName → { fullPath, url }
-   */
   private async generateVariants(
-    sourcePath: string,
+    sourceBuffer: Buffer,
     entityKey: string,
     variantKey: string,
-  ): Promise<Record<string, { fullPath: string; url: string }>> {
+  ): Promise<Record<string, { key: string; url: string }>> {
     const variantSizes = VARIANT_CONFIGS[variantKey] ?? { original: null };
-    const cropConfig = CROP_CONFIGS[variantKey] ?? { fit: 'inside' };
+    const cropConfig = CROP_CONFIGS[variantKey] ?? { fit: 'inside' as const };
     const formatConfig = FORMAT_CONFIGS[variantKey] ?? {
       quality: 85,
       skipVariantsIfSvg: false,
     };
 
     const uuid = uuidv4();
-    const results: Record<string, { fullPath: string; url: string }> = {};
+    const results: Record<string, { key: string; url: string }> = {};
 
     for (const [name, size] of Object.entries(variantSizes)) {
       const variantName = name as VariantName;
       const quality = VARIANT_QUALITY[variantName] ?? formatConfig.quality;
+      const key = `images/${entityKey}/${variantName}/${uuid}.webp`;
 
-      const relativePath = `images/${entityKey}/${variantName}/${uuid}.webp`;
-      const fullPath = join(this.uploadsRoot, relativePath);
-
-      await mkdir(dirname(fullPath), { recursive: true });
-
+      let outBuffer: Buffer;
       try {
-        const pipeline = sharp(sourcePath);
+        // sharp(buffer) nuevo en cada iteración: el pipeline consume el buffer de entrada
+        const pipeline = sharp(sourceBuffer);
 
         if (size !== null) {
           pipeline.resize(size, size, {
             fit: cropConfig.fit,
             position: cropConfig.position ?? 'centre',
             background: cropConfig.background ?? '#ffffff',
-            withoutEnlargement: true, // nunca agranda una imagen pequeña
+            withoutEnlargement: true,
           });
         }
 
-        await pipeline.webp({ quality }).toFile(fullPath);
+        outBuffer = await pipeline.webp({ quality }).toBuffer();
       } catch {
         throw new InternalServerErrorException(
           `Error generando variante "${variantName}" para ${entityKey}`,
         );
       }
 
-      const url = `/uploads/${relativePath}`;
-      results[variantName] = { fullPath, url };
+      await this.putObject(key, outBuffer, 'image/webp');
+      results[variantName] = { key, url: this.toPublicUrl(key) };
     }
 
     return results;
   }
 
-  // ── NUEVO: moveSvgToFinal ────────────────────────────────────────────────────
-
-  /**
-   * Para SVG en brand y site_config: mueve el archivo a /original/
-   * sin procesar con Sharp. El SVG se sirve directamente desde esa URL.
-   */
   private async moveSvgToFinal(
-    tempPath: string,
+    tempKey: string,
     entityKey: string,
   ): Promise<MovedImage> {
     const uuid = uuidv4();
-    const relativePath = `images/${entityKey}/original/${uuid}.svg`;
-    const fullPath = join(this.uploadsRoot, relativePath);
-
-    await mkdir(dirname(fullPath), { recursive: true });
+    const key = `images/${entityKey}/original/${uuid}.svg`;
 
     try {
-      await this.moveFile(tempPath, fullPath);
+      await this.s3.send(
+        new CopyObjectCommand({
+          Bucket: this.bucket,
+          CopySource: `${this.bucket}/${tempKey}`,
+          Key: key,
+          ContentType: 'image/svg+xml',
+        }),
+      );
     } catch {
       throw new InternalServerErrorException(
-        'Error al mover el SVG al directorio final',
+        'Error al mover el SVG al bucket final',
       );
     }
 
-    const url = `/uploads/${relativePath}`;
-    return {
-      finalPath: fullPath,
-      url,
-      variants: { original: url },
-      isSvg: true,
-    };
+    const url = this.toPublicUrl(key);
+    return { finalPath: key, url, variants: { original: url }, isSvg: true };
   }
 
-  // ── NUEVO: moveFile con fallback cross-device ────────────────────────────────
+  // ═══════════════════════════════════════════════
+  // Limpieza de temporales huérfanos (usado por el cron)
+  // Sustituye al readdir() del filesystem local por un listado del prefijo temp/
+  // ═══════════════════════════════════════════════
 
-  /**
-   * Intenta rename() primero (atómico, sin copiar bytes).
-   * Si falla con EXDEV (origen y destino en distintas particiones,
-   * común en Docker), hace copyFile() + unlink() como fallback.
-   */
-  private async moveFile(src: string, dest: string): Promise<void> {
+  async cleanupOldTempObjects(olderThanMinutes: number): Promise<number> {
+    const threshold = Date.now() - olderThanMinutes * 60 * 1000;
+    let cleaned = 0;
+    let continuationToken: string | undefined;
+
+    do {
+      const res = await this.s3.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: 'temp/',
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      const stale = (res.Contents ?? []).filter(
+        (obj) => obj.LastModified && obj.LastModified.getTime() < threshold,
+      );
+
+      await Promise.all(
+        stale.map(async (obj) => {
+          await this.deleteFile(obj.Key);
+          cleaned++;
+        }),
+      );
+
+      continuationToken = res.IsTruncated
+        ? res.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+
+    return cleaned;
+  }
+
+  // ── helpers privados ──────────────────────────────────────────────────────
+
+  private async putObject(
+    key: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<void> {
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }),
+    );
+  }
+
+  private async getObjectBuffer(key: string): Promise<Buffer> {
+    let res: GetObjectCommandOutput;
     try {
-      await rename(src, dest);
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-        await copyFile(src, dest);
-        await unlink(src).catch(() => null);
-      } else {
-        throw err;
-      }
+      res = await this.s3.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+    } catch {
+      throw new InternalServerErrorException(
+        `No se encontró el archivo temporal "${key}" en R2`,
+      );
     }
+
+    if (!res.Body) {
+      throw new InternalServerErrorException(
+        `El objeto "${key}" en R2 no tiene contenido`,
+      );
+    }
+
+    const stream = res.Body as unknown as NodeJS.ReadableStream;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  private toPublicUrl(key: string): string {
+    return `${this.publicUrl}/${key}`;
+  }
+
+  private extractKey(url: string | null | undefined): string | null {
+    if (!url) return null;
+    return url.startsWith(this.publicUrl)
+      ? url.slice(this.publicUrl.length + 1)
+      : url; // ya era una key, no una url completa
   }
 }

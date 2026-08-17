@@ -28,6 +28,7 @@ import { ProductReviewsModule } from './modules/product-reviews/product-reviews.
 import { ComplaintsService } from './modules/complaints/service/complaints.service';
 import { ComplaintsController } from './modules/complaints/controller/complaints.controller';
 import { CartModule } from './modules/cart/cart.module';
+import r2Config from './config/R2.config';
 
 @Module({
   imports: [
@@ -35,7 +36,7 @@ import { CartModule } from './modules/cart/cart.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
-      load: [jwtConfig],
+      load: [jwtConfig, r2Config],
     }),
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),

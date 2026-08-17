@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { join } from 'path';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ImageEntityType, Prisma } from 'generated/prisma/client';
 import { ImageStorageService } from './image-storage.service';
@@ -134,8 +133,7 @@ export class ImageRecordService {
     imageRole: string,
     order = 0,
   ): Promise<MovedImageData> {
-    const filename = tempRecord.url!.split('/').pop()!;
-    const tempPath = join(process.cwd(), 'uploads', 'temp', filename);
+    const tempKey = tempRecord.tempPath!;
     const meta = tempRecord.metadata as { mimeType?: string };
     const mimeType = meta?.mimeType ?? 'image/jpeg';
 
@@ -144,7 +142,7 @@ export class ImageRecordService {
       url: finalUrl,
       variants,
     } = await this.storage.moveTempToFinal(
-      tempPath,
+      tempKey,
       entityType,
       imageRole,
       mimeType,
@@ -316,9 +314,7 @@ export class ImageRecordService {
         if (meta?.variants) {
           return Promise.all(
             Object.values(meta.variants).map((variantUrl) =>
-              this.storage
-                .deleteFile(join(process.cwd(), variantUrl))
-                .catch(() => null),
+              this.storage.deleteByUrl(variantUrl).catch(() => null),
             ),
           );
         }
@@ -353,9 +349,7 @@ export class ImageRecordService {
     if (meta?.variants) {
       await Promise.all(
         Object.values(meta.variants).map((variantUrl) =>
-          this.storage
-            .deleteFile(join(process.cwd(), variantUrl))
-            .catch(() => null),
+          this.storage.deleteByUrl(variantUrl).catch(() => null),
         ),
       );
     } else {
@@ -389,9 +383,7 @@ export class ImageRecordService {
     if (meta?.variants) {
       await Promise.all(
         Object.values(meta.variants).map((variantUrl) =>
-          this.storage
-            .deleteFile(join(process.cwd(), variantUrl))
-            .catch(() => null),
+          this.storage.deleteByUrl(variantUrl).catch(() => null),
         ),
       );
     } else {
@@ -407,28 +399,7 @@ export class ImageRecordService {
   // ═══════════════════════════════════════════════
 
   async cleanOrphanTempFiles(olderThanMinutes = 120): Promise<number> {
-    const { readdir, stat } = await import('fs/promises');
-    const tempDir = join(process.cwd(), 'uploads', 'temp');
-    const threshold = Date.now() - olderThanMinutes * 60 * 1000;
-    let cleaned = 0;
-
-    try {
-      const files = await readdir(tempDir);
-      await Promise.all(
-        files.map(async (file) => {
-          const filePath = join(tempDir, file);
-          const fileStat = await stat(filePath);
-          if (fileStat.mtimeMs < threshold) {
-            await this.storage.deleteFile(filePath).catch(() => null);
-            cleaned++;
-          }
-        }),
-      );
-    } catch {
-      // tempDir vacío o inexistente
-    }
-
-    return cleaned;
+    return this.storage.cleanupOldTempObjects(olderThanMinutes);
   }
 
   async fixIncompleteImages(olderThanMinutes = 5): Promise<number> {
@@ -447,8 +418,7 @@ export class ImageRecordService {
 
     for (const img of incomplete) {
       try {
-        const filename = img.url!.split('/').pop()!;
-        const tempPath = join(process.cwd(), 'uploads', 'temp', filename);
+        const tempKey = img.tempPath!;
         const meta = img.metadata as { mimeType?: string };
         const mimeType = meta?.mimeType ?? 'image/jpeg';
 
@@ -457,7 +427,7 @@ export class ImageRecordService {
           url: finalUrl,
           variants,
         } = await this.storage.moveTempToFinal(
-          tempPath,
+          tempKey,
           img.entityType,
           img.imageRole,
           mimeType,
@@ -529,9 +499,7 @@ export class ImageRecordService {
         if (meta?.variants) {
           return Promise.all(
             Object.values(meta.variants).map((variantUrl) =>
-              this.storage
-                .deleteFile(join(process.cwd(), variantUrl))
-                .catch(() => null),
+              this.storage.deleteByUrl(variantUrl).catch(() => null),
             ),
           );
         }
