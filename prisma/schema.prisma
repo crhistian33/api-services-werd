@@ -27,6 +27,7 @@ enum ImageEntityType {
   ORDER_DELIVERY
   ORDER_REFUND
   ORDER_ITEM_RETURN
+  COMPLAINT
 }
 
 enum ProductStatus {
@@ -101,6 +102,7 @@ enum ComplaintStatus {
   OPEN
   IN_REVIEW
   RESOLVED
+  REJECTED
   CLOSED
 }
 
@@ -1248,7 +1250,9 @@ model Complaint {
 
   description    String            @db.Text
 
-  adminResponse  String?           @db.Text
+  adminResponse    String?         @db.Text        // Contenido de la respuesta del admin
+  responseSubject  String?                         // Asunto de la respuesta (RE: Libro de reclamaciones - ...)
+  responseFileKeys String[]        @default([])    // Keys R2 de los adjuntos de la respuesta
   managedById    String?
   resolvedById   String?
   createdAt      DateTime          @default(now())

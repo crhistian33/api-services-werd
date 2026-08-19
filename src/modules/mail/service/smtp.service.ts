@@ -37,6 +37,11 @@ export class SmtpService {
     html: string;
     from?: string;
     fromName?: string;
+    attachments?: {
+      name: string;
+      content: string; // base64
+      contentType: string;
+    }[];
   }): Promise<void> {
     const apiKey = this.config.get<string>('BREVO_API_KEY');
 
@@ -52,12 +57,20 @@ export class SmtpService {
     const fromName =
       options.fromName ?? this.config.get<string>('MAIL_FROM_NAME', 'Werd');
 
-    const body = {
+    const body: Record<string, unknown> = {
       sender: { name: fromName, email: fromEmail },
       to: [{ email: options.to }],
       subject: options.subject,
       htmlContent: options.html,
     };
+
+    // Brevo acepta adjuntos como array de { name, content (base64) }
+    if (options.attachments && options.attachments.length > 0) {
+      body['attachment'] = options.attachments.map((a) => ({
+        name: a.name,
+        content: a.content,
+      }));
+    }
 
     try {
       const response = await fetch(this.apiUrl, {

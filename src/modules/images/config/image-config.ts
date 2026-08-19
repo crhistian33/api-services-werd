@@ -187,4 +187,21 @@ export const IMAGE_CONFIGS: Record<string, EntityImageConfig> = {
       },
     ],
   },
+  complaint: {
+    entityType: ImageEntityType.COMPLAINT,
+    roles: [
+      {
+        role: 'complaint_evidence',
+        maxCount: 5,
+        // Soporta imágenes y PDFs como adjuntos de la respuesta del admin
+        allowedMimeTypes: [
+          'image/jpeg',
+          'image/png',
+          'image/webp',
+          'application/pdf',
+        ],
+        maxSizeBytes: 10 * 1024 * 1024, // 10 MB (PDFs pueden ser más pesados)
+      },
+    ],
+  },
 };

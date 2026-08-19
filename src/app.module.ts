@@ -25,9 +25,8 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NewsletterModule } from './modules/newsletter/newsletter.module';
 import { ProductReviewsModule } from './modules/product-reviews/product-reviews.module';
-import { ComplaintsService } from './modules/complaints/service/complaints.service';
-import { ComplaintsController } from './modules/complaints/controller/complaints.controller';
 import { CartModule } from './modules/cart/cart.module';
+import { ComplaintsModule } from './modules/complaints/complaints.module';
 import r2Config from './config/R2.config';
 
 @Module({
@@ -66,8 +65,9 @@ import r2Config from './config/R2.config';
     NewsletterModule,
     ProductReviewsModule,
     CartModule,
+    ComplaintsModule,
   ],
-  controllers: [AppController, ComplaintsController],
-  providers: [AppService, ComplaintsService],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+        .header {
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+            padding: 36px 24px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0 0 6px;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+        .header p {
+            color: #bfdbfe;
+            margin: 0;
+            font-size: 13px;
+        }
+        .content {
+            padding: 36px 40px;
+            color: #334155;
+            line-height: 1.7;
+        }
+        .content p {
+            margin: 0 0 16px;
+        }
+        /* ── Sección de referencia original (nota/cita) ── */
+        .original-complaint {
+            background-color: #f8fafc;
+            border-left: 4px solid #94a3b8;
+            border-radius: 0 8px 8px 0;
+            padding: 18px 20px;
+            margin: 24px 0;
+        }
+        .original-complaint .label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #64748b;
+            margin-bottom: 10px;
+        }
+        .original-complaint .ticket-ref {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }
+        .original-complaint .complaint-text {
+            font-size: 14px;
+            color: #475569;
+            font-style: italic;
+            line-height: 1.6;
+            margin: 0;
+            white-space: pre-wrap;
+        }
+        /* ── Sección de respuesta del admin ── */
+        .response-section {
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .response-section .response-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #1d4ed8;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .response-section .response-text {
+            font-size: 15px;
+            color: #1e3a5f;
+            line-height: 1.75;
+            margin: 0;
+            white-space: pre-wrap;
+        }
+        /* ── Adjuntos ── */
+        .attachments {
+            margin: 20px 0 0;
+            padding-top: 16px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .attachments .attach-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 10px;
+        }
+        .attach-item {
+            display: inline-block;
+            background-color: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 6px 12px;
+            margin: 4px 4px 4px 0;
+            font-size: 13px;
+            color: #334155;
+            text-decoration: none;
+        }
+        /* ── Info box ── */
+        .info-box {
+            background-color: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 14px 18px;
+            font-size: 13px;
+            color: #166534;
+            margin: 20px 0 0;
+        }
+        /* ── Footer ── */
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px;
+            text-align: center;
+            font-size: 13px;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+        }
+        .footer strong {
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Encabezado -->
+        <div class="header">
+            <h1>📋 Respuesta a tu Libro de Reclamaciones</h1>
+            <p>Ticket {{ticketNumber}}</p>
+        </div>
+
+        <!-- Cuerpo principal -->
+        <div class="content">
+            <p>Hola <strong>{{customerName}}</strong>,</p>
+            <p>
+                Hemos revisado tu reclamo registrado en nuestro Libro de Reclamaciones y te
+                enviamos nuestra respuesta oficial a continuación.
+            </p>
+
+            <!-- Descripción original del reclamo (formato nota/cita) -->
+            <div class="original-complaint">
+                <div class="label">📝 Tu reclamo original</div>
+                <div class="ticket-ref">Ticket: {{ticketNumber}} &nbsp;·&nbsp; Tipo: {{complaintTypeLabel}}</div>
+                <p class="complaint-text">{{description}}</p>
+            </div>
+
+            <!-- Respuesta del administrador -->
+            <div class="response-section">
+                <div class="response-label">✉️ Nuestra Respuesta</div>
+                <p class="response-text">{{responseContent}}</p>
+
+                {{#if hasAttachments}}
+                <div class="attachments">
+                    <div class="attach-label">📎 Archivos adjuntos ({{attachmentCount}}):</div>
+                    {{#each attachmentNames}}
+                    <span class="attach-item">{{this}}</span>
+                    {{/each}}
+                    <p style="font-size: 12px; color: #64748b; margin: 8px 0 0;">
+                        Los archivos adjuntos se incluyen directamente en este correo.
+                    </p>
+                </div>
+                {{/if}}
+            </div>
+
+            <!-- Información de cierre -->
+            <div class="info-box">
+                ✅ Tu reclamo ha sido atendido. Si tienes alguna consulta adicional sobre
+                esta respuesta, puedes contactarnos respondiendo este correo o comunicándote
+                con nuestro equipo de soporte.
+            </div>
+
+            <p style="margin-top: 24px; font-size: 13px; color: #64748b;">
+                <strong>Fecha de respuesta:</strong> {{resolvedAt}}<br>
+                <strong>Número de referencia:</strong> {{ticketNumber}}
+            </p>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <strong>Werd</strong> &mdash; Libro de Reclamaciones<br>
+            &copy; 2026 Werd. Todos los derechos reservados.
+        </div>
+
+    </div>
+</body>
+</html>

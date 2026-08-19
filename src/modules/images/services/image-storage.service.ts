@@ -128,6 +128,7 @@ export class ImageStorageService {
 
     try {
       if (file.mimetype === 'image/svg+xml') {
+        // SVG: subir directamente, sin pasar por Sharp
         await this.putObject(key, file.buffer, file.mimetype);
         metadata = {
           width: 0,
@@ -136,8 +137,18 @@ export class ImageStorageService {
           format: 'svg',
           mimeType: file.mimetype,
         };
+      } else if (file.mimetype === 'application/pdf') {
+        // PDF: subir directamente, sin pasar por Sharp (no es imagen)
+        await this.putObject(key, file.buffer, file.mimetype);
+        metadata = {
+          width: 0,
+          height: 0,
+          size: file.size,
+          format: 'pdf',
+          mimeType: file.mimetype,
+        };
       } else {
-        // leemos metadata con sharp (sin escribir a disco) y subimos el buffer original tal cual
+        // Raster: leemos metadata con sharp y subimos el buffer original tal cual
         const sharpMeta = await sharp(file.buffer).metadata();
         await this.putObject(key, file.buffer, file.mimetype);
         metadata = {
@@ -149,7 +160,7 @@ export class ImageStorageService {
         };
       }
     } catch {
-      throw new InternalServerErrorException('Error al procesar la imagen');
+      throw new InternalServerErrorException('Error al procesar el archivo');
     }
 
     return { tempPath: key, url: this.toPublicUrl(key), metadata };
@@ -178,6 +189,36 @@ export class ImageStorageService {
   async deleteByUrl(url: string | null | undefined): Promise<void> {
     const key = this.extractKey(url);
     if (key) await this.deleteFile(key);
+  }
+
+  /**
+   * Descarga un objeto de R2 y retorna su buffer.
+   * Útil para adjuntar archivos a correos (base64).
+   */
+  async downloadFileBuffer(key: string): Promise<Buffer> {
+    return this.getObjectBuffer(key);
+  }
+
+  /**
+   * Mueve un archivo "raw" (sin variantes, como PDFs) desde temp/ a su
+   * carpeta final en R2. Usado para adjuntos de respuesta de reclamos.
+   * Retorna la key final y la URL pública.
+   */
+  async moveRawFileToFinal(
+    tempKey: string,
+    entityKey: string,
+    role: string,
+    mimeType: string,
+  ): Promise<{ finalKey: string; url: string }> {
+    const ext = extname(tempKey) || '.bin';
+    const uuid = uuidv4();
+    const finalKey = `files/${entityKey}/${role}/${uuid}${ext}`;
+
+    const buffer = await this.getObjectBuffer(tempKey);
+    await this.putObject(finalKey, buffer, mimeType);
+    await this.deleteFile(tempKey);
+
+    return { finalKey, url: this.toPublicUrl(finalKey) };
   }
 
   // ═══════════════════════════════════════════════

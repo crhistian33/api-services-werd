@@ -151,6 +151,27 @@ interface ClaimShipmentConfirmedContext {
   courierName: string;
 }
 
+interface ComplaintResponseContext {
+  customerName: string;
+  ticketNumber: string;
+  complaintTypeLabel: string; // 'Reclamo' | 'Queja'
+  description: string; // Descripción original del cliente
+  responseContent: string; // Cuerpo de la respuesta del admin
+  resolvedAt: string; // Fecha de respuesta formateada
+  hasAttachments: boolean;
+  attachmentCount: number;
+  attachmentNames: string[]; // Nombres de los archivos adjuntos
+}
+
+interface ComplaintRejectedContext {
+  customerName: string;
+  ticketNumber: string;
+  complaintTypeLabel: string; // 'Reclamo' | 'Queja'
+  description: string; // Descripción original del cliente
+  rejectionReason: string; // Motivo del rechazo
+  rejectedAt: string; // Fecha formateada
+}
+
 @Injectable()
 export class MailService {
   readonly logger = new Logger(MailService.name);
@@ -204,7 +225,7 @@ export class MailService {
   }
 
   /**
-   * Envía un correo transaccional vía SMTP (nodemailer).
+   * Envía un correo transaccional vía Brevo.
    * Fire-and-forget: el error se loggea pero NO se relanza,
    * para que nunca bloquee la respuesta HTTP.
    */
@@ -213,6 +234,11 @@ export class MailService {
     subject: string,
     templateName: string,
     context: object,
+    attachments?: {
+      name: string;
+      content: string; // base64
+      contentType: string;
+    }[],
   ): Promise<void> {
     try {
       const htmlContent = this.renderTemplate(templateName, context);
@@ -223,6 +249,7 @@ export class MailService {
         html: htmlContent,
         from: this.fromEmail,
         fromName: this.fromName,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       });
     } catch (err: unknown) {
       const errorMessage =
@@ -537,6 +564,44 @@ export class MailService {
       email,
       `Envío de retorno registrado — ${ctx.claimNumber} — Werd`,
       'claim-shipment-confirmed',
+      ctx,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // LIBRO DE RECLAMACIONES
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Envía la respuesta oficial del admin al cliente sobre su reclamo/queja.
+   * Los archivos adjuntos se incluyen directamente en el correo como base64.
+   */
+  async sendComplaintResponse(
+    email: string,
+    ctx: ComplaintResponseContext,
+    attachments?: {
+      name: string;
+      content: string; // base64
+      contentType: string;
+    }[],
+  ): Promise<void> {
+    await this.send(
+      email,
+      `RE: Libro de reclamaciones - ${ctx.ticketNumber}`,
+      'complaint-response',
+      ctx,
+      attachments,
+    );
+  }
+
+  async sendComplaintRejected(
+    email: string,
+    ctx: ComplaintRejectedContext,
+  ): Promise<void> {
+    await this.send(
+      email,
+      `RE: Libro de reclamaciones - ${ctx.ticketNumber} - Resultado de evaluación`,
+      'complaint-rejected',
       ctx,
     );
   }
