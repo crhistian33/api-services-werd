@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { PaymentMethodType } from 'generated/prisma/client';
+import { decryptData } from '../../../common/utils/crypto.util';
 
 interface PaymentMethodConfig {
   publicKey?: string;
@@ -46,7 +47,9 @@ export class CulqiService {
 
     // 2. Obtener la llave privada desde config
     const config = (order.paymentMethod.config as PaymentMethodConfig) || {};
-    const privateKey = config.privateKey;
+    const privateKey = config.privateKey
+      ? decryptData(config.privateKey)
+      : undefined;
 
     if (!privateKey) {
       throw new BadRequestException(

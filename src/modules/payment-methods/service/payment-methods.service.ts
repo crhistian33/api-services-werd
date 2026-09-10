@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { BaseService } from '../../../common/services/base.service';
+import {
+  BaseService,
+  PrismaDatabaseClient,
+} from '../../../common/services/base.service';
 import {
   CreatePaymentMethodDto,
   UpdatePaymentMethodDto,
   QueryPaymentMethodDto,
 } from '../dto';
 import { BulkReorderPaymentMethodDto } from '../dto/bulk-payment-method.dto';
+import { encryptData, decryptData } from '../../../common/utils/crypto.util';
 
 type PaymentMethodEntity = Prisma.PaymentMethodGetPayload<{
   include: {
@@ -44,7 +48,7 @@ export class PaymentMethodsService extends BaseService<
   async findAllMethods(query: QueryPaymentMethodDto) {
     const { isActive, type, search, page, limit } = query;
 
-    return this.findAll({
+    const result = await this.findAll({
       where: {
         ...(isActive !== undefined && { isActive }),
         ...(type !== undefined && { type }),
@@ -59,9 +63,28 @@ export class PaymentMethodsService extends BaseService<
       include: STANDARD_INCLUDE,
       pagination: { page, limit },
     });
+
+    if (result.data) {
+      result.data = result.data.map((method) => this.decryptConfig(method));
+    }
+
+    return result;
+  }
+
+  override async findOne(
+    id: string,
+    include?: object,
+    includeDeleted = false,
+    client?: PrismaDatabaseClient,
+  ) {
+    const method = await super.findOne(id, include, includeDeleted, client);
+    return this.decryptConfig(method);
   }
 
   async createMethod(dto: CreatePaymentMethodDto, adminId: string) {
+    if (dto.config && typeof dto.config.privateKey === 'string') {
+      dto.config.privateKey = encryptData(dto.config.privateKey);
+    }
     return this.create({
       ...dto,
       createdBy: { connect: { id: adminId } },
@@ -71,10 +94,23 @@ export class PaymentMethodsService extends BaseService<
 
   async updateMethod(id: string, dto: UpdatePaymentMethodDto, adminId: string) {
     await this.assertExists(id);
+    if (dto.config && typeof dto.config.privateKey === 'string') {
+      dto.config.privateKey = encryptData(dto.config.privateKey);
+    }
     return this.update(id, {
       ...dto,
       updatedBy: { connect: { id: adminId } },
     } as UpdatePaymentMethodDto);
+  }
+
+  private decryptConfig<T extends { config?: unknown }>(method: T): T {
+    if (method?.config && typeof method.config === 'object') {
+      const configObj = method.config as PaymentMethodConfig;
+      if (configObj.privateKey) {
+        configObj.privateKey = decryptData(configObj.privateKey);
+      }
+    }
+    return method;
   }
 
   // async toggleActive(id: string) {
