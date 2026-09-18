@@ -6,6 +6,7 @@ import {
   MinLength,
   Matches,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class ForgotPasswordResetDto {
   @ApiProperty({
@@ -44,6 +45,9 @@ export class ForgotPasswordDto {
     example: 'cliente@ejemplo.com',
     description: 'Correo electrónico del cliente para recuperación',
   })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail({}, { message: 'El formato del correo es inválido' })
   @IsNotEmpty({ message: 'El correo es obligatorio' })
   email: string;

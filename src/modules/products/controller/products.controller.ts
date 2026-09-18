@@ -96,7 +96,6 @@ export class ProductsController {
   @ApiOperation({ summary: 'Listado de productos para el buscador' })
   @ApiOkResponse({ description: 'Lista paginada — solo activos' })
   listProductsPublic(@Query() query: ListProductsDto) {
-    console.log('Query', query);
     return this.productsService.listProductsPublic(query);
   }
 

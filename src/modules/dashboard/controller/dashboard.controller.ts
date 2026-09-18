@@ -30,7 +30,6 @@ export class DashboardController {
     description: 'Fecha fin (ISO 8601). Default: hoy',
   })
   async getDashboard(@Query() query: DashboardQueryDto) {
-    console.log('query', query);
     return this.dashboardService.getDashboardData(query);
   }
 }
