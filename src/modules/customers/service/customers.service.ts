@@ -268,8 +268,8 @@ export class CustomersService extends BaseService<
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const customer = await this.prisma.customer.findUnique({
-      where: { email: dto.email },
+    const customer = await this.prisma.customer.findFirst({
+      where: { email: { equals: dto.email, mode: 'insensitive' } },
     });
 
     if (!customer) {
@@ -285,6 +285,11 @@ export class CustomersService extends BaseService<
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
+    // Limpiamos códigos anteriores
+    await this.prisma.customerVerificationCode.deleteMany({
+      where: { email: customer.email },
+    });
+
     await this.prisma.customerVerificationCode.create({
       data: {
         code,
@@ -294,10 +299,12 @@ export class CustomersService extends BaseService<
       },
     });
 
-    // Envío asíncrono no bloqueante (fire-and-forget)
-    this.mailService
+    // Se agrega await para asegurar el envío (vital en entornos serverless)
+    await this.mailService
       .sendPasswordResetEmail(customer.email, code)
-      .catch(() => {});
+      .catch((err) =>
+        this.logger.error('Error al enviar email de reset:', err),
+      );
 
     return {
       message:
